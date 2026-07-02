@@ -89,12 +89,14 @@ def create_app() -> FastAPI:
     # Health checks
     app.include_router(health_router, prefix="/api/v1")
 
-    # Business routes (Task 011: first vertical slice)
+    # Business routes (Task 011–012: vertical slices)
     from app.presentation.api.v1.auth import router as auth_router
     from app.presentation.api.v1.learning import router as learning_router
+    from app.presentation.api.v1.questions import router as questions_router
 
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(learning_router, prefix="/api/v1")
+    app.include_router(questions_router, prefix="/api/v1")
 
     # Root endpoint
     @app.get("/", tags=["Root"])
