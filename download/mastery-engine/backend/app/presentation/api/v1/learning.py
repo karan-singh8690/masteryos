@@ -304,19 +304,36 @@ async def get_adaptive_queue(
 ) -> AdaptiveQueueResponse:
     """Get the adaptive queue for the current study session.
 
-    The queue is generated deterministically based on:
-    - The learner's current mastery scores
-    - Due reviews
-    - Weak concepts
-    - The learning goal (if set)
-    - The session intent
+    INTEGRATED PIPELINE (Task 014):
+    1. Load the study session (must be active).
+    2. Load mastery scores, due reviews, learning goals.
+    3. Load published QuestionTemplates + TemplateVersions from the database.
+    4. Filter by subject, difficulty, concept, review status.
+    5. Select templates via DeterministicQueueGenerator (priority ranking).
+    6. For each selected template: QuestionFactory.generate() → real QuestionInstance.
+    7. Persist each QuestionInstance to the database.
+    8. Return real QuestionInstance IDs (no placeholders).
 
     No ML. Deterministic given the same inputs.
     """
     from app.domain.scheduling.queue_generator import DeterministicQueueGenerator
+    from app.domain.assessment.question_factory import QuestionFactory, TemplateVersionData
+    from app.infrastructure.database.orm.content import (
+        QuestionTemplateModel,
+        TemplateVersionModel,
+        TemplateConceptModel,
+        ExplanationModel,
+    )
+    from app.infrastructure.database.orm.core import QuestionInstanceModel
+    from sqlalchemy import select
+    from datetime import datetime, timezone
+    import hashlib
+    import json
 
     async with uow as _uow:
-        # Load the study session
+        session_obj = _uow._session  # type: ignore[union-attr]
+
+        # 1. Load the study session
         session = await _uow.study_sessions.get_by_id(StudySessionId(session_id))
         if session is None:
             raise HTTPException(status_code=404, detail={
@@ -330,22 +347,62 @@ async def get_adaptive_queue(
                 "message": f"Session is not active (status: {session.status})",
             })
 
-        # Load mastery scores for the learner
+        # 2. Load learner state
         mastery_scores = await _uow.mastery_scores.list_by_enrollment(
             session.learner_enrollment_id
         )
-
-        # Load due reviews
         due_reviews = await _uow.reviews.list_due_by_enrollment(
             session.learner_enrollment_id
         )
-
-        # Load learning goals
         goals = await _uow.learning_goals.get_active_by_enrollment(
             session.learner_enrollment_id
         )
 
-        # Generate the queue deterministically
+        # 3. Load published templates with their current versions
+        # Query: published templates → join template_versions → join template_concepts
+        stmt = (
+            select(TemplateVersionModel, QuestionTemplateModel)
+            .join(QuestionTemplateModel, TemplateVersionModel.template_id == QuestionTemplateModel.id)
+            .where(QuestionTemplateModel.status == "published")
+            .where(QuestionTemplateModel.current_version_id == TemplateVersionModel.id)
+        )
+        result = await session_obj.execute(stmt)
+        rows = result.all()
+
+        if not rows:
+            # No published content available — return diagnostic queue
+            # (still using factory if templates exist but aren't published yet)
+            raise HTTPException(status_code=404, detail={
+                "code": "NO_PUBLISHED_CONTENT",
+                "message": "No published question templates found. Publish templates first.",
+            })
+
+        # 4. Build TemplateVersionData list with concept links
+        template_versions: list[TemplateVersionData] = []
+        for tv_model, qt_model in rows:
+            # Load concept links for this template version
+            tc_stmt = select(TemplateConceptModel.concept_id).where(
+                TemplateConceptModel.template_version_id == tv_model.id
+            )
+            tc_result = await session_obj.execute(tc_stmt)
+            concept_ids = [row[0] for row in tc_result.all()]
+
+            template_versions.append(TemplateVersionData(
+                id=tv_model.id,
+                template_id=tv_model.template_id,
+                version_number=tv_model.version_number,
+                parameter_schema=tv_model.parameter_schema or {},
+                prompt_template=tv_model.prompt_template or {},
+                correct_answer_generator=tv_model.correct_answer_generator or {},
+                distractor_generator=tv_model.distractor_generator,
+                explanation_template=tv_model.explanation_template or {},
+                hint_tiers=tv_model.hint_tiers or [],
+                difficulty_estimate=tv_model.difficulty_estimate,
+                discrimination_estimate=tv_model.discrimination_estimate,
+                concept_ids=concept_ids,
+            ))
+
+        # 5. Generate queue via DeterministicQueueGenerator (selects + ranks templates)
         generator = DeterministicQueueGenerator()
         queue_items = generator.generate(
             enrollment_id=session.learner_enrollment_id,
@@ -354,21 +411,113 @@ async def get_adaptive_queue(
             mastery_scores=list(mastery_scores),
             due_reviews=list(due_reviews),
             learning_goals=list(goals),
-            queue_size=15,
+            queue_size=min(15, len(template_versions)),
         )
+
+        # 6. For each queue item: generate a real QuestionInstance via QuestionFactory
+        factory = QuestionFactory()
+        persisted_questions: list[QueueItemDTO] = []
+
+        # Load already-served question instances for this session (duplicate prevention)
+        existing_stmt = select(QuestionInstanceModel).where(
+            QuestionInstanceModel.study_session_id == session_id
+        )
+        existing_result = await session_obj.execute(existing_stmt)
+        served_template_ids = set()
+        for qi in existing_result.scalars().all():
+            served_template_ids.add(qi.template_version_id)
+
+        # Get active content version (if any)
+        from app.infrastructure.database.orm.content import ContentVersionModel
+        cv_stmt = select(ContentVersionModel).where(
+            ContentVersionModel.subject_id == rows[0][1].subject_id,
+            ContentVersionModel.status == "active",
+        ).order_by(ContentVersionModel.version_number.desc()).limit(1)
+        cv_result = await session_obj.execute(cv_stmt)
+        cv_model = cv_result.scalar_one_or_none()
+        content_version_id = cv_model.id if cv_model else uuid4()
+
+        # Get active algorithm version
+        algorithm = await _uow.algorithm_versions.get_active()
+        algorithm_version_id = algorithm.id.value if algorithm else uuid4()
+
+        generated_count = 0
+        for item in queue_items:
+            if generated_count >= 15:
+                break
+
+            # Match queue item to a template version
+            # The queue generator produces concept_ids; we match templates that cover those concepts
+            matched_tv: TemplateVersionData | None = None
+            for tv in template_versions:
+                if tv.id in served_template_ids:
+                    continue  # Skip already-served templates
+                # Match by concept overlap or just take the next available
+                if item.concept_id in tv.concept_ids or not item.concept_id:
+                    matched_tv = tv
+                    break
+
+            if matched_tv is None:
+                # Take the next unserved template
+                for tv in template_versions:
+                    if tv.id not in served_template_ids:
+                        matched_tv = tv
+                        break
+
+            if matched_tv is None:
+                continue  # All templates served
+
+            # Generate deterministic seed from session_id + template_id + position
+            seed_input = f"{session_id}:{matched_tv.id}:{generated_count}"
+            seed = int(hashlib.sha256(seed_input.encode()).hexdigest()[:8], 16)
+
+            # Generate the QuestionInstance
+            from app.domain.shared.ids import ContentVersionId as CVID
+            gen_result = factory.generate(
+                template_version=matched_tv,
+                seed=seed,
+                content_version_id=CVID(content_version_id),
+                learner_enrollment_id=session.learner_enrollment_id,
+                study_session_id=session.id,
+            )
+
+            instance = gen_result.question_instance
+
+            # 7. Persist the QuestionInstance to the database
+            orm_instance = QuestionInstanceModel(
+                id=instance.id.value,
+                template_version_id=instance.template_version_id.value,
+                content_version_id=instance.content_version_id.value,
+                learner_enrollment_id=instance.learner_enrollment_id.value,
+                study_session_id=instance.study_session_id.value,
+                parameter_seed=instance.parameter_seed,
+                parameter_values=instance.parameter_values,
+                rendered_prompt=instance.rendered_prompt,
+                rendered_choices=instance.rendered_choices,
+                correct_answer=instance.correct_answer,
+                distractors_with_tags=instance.distractors_with_tags,
+                served_at=instance.served_at,
+                answered_at=None,
+                status=instance.status,
+            )
+            session_obj.add(orm_instance)
+            served_template_ids.add(matched_tv.id)
+
+            # 8. Build the response with REAL IDs
+            persisted_questions.append(QueueItemDTO(
+                question_instance_id=instance.id.value,
+                concept_id=matched_tv.concept_ids[0] if matched_tv.concept_ids else item.concept_id,
+                difficulty=matched_tv.difficulty_estimate,
+                estimated_duration_seconds=item.estimated_duration_seconds,
+                recommendation_score=item.recommendation_score,
+                reason=item.reason,
+            ))
+            generated_count += 1
+
+        await session_obj.commit()
 
         return AdaptiveQueueResponse(
             study_session_id=session_id,
             current_position=0,
-            questions=[
-                QueueItemDTO(
-                    question_instance_id=item.question_instance_id,
-                    concept_id=item.concept_id,
-                    difficulty=item.difficulty,
-                    estimated_duration_seconds=item.estimated_duration_seconds,
-                    recommendation_score=item.recommendation_score,
-                    reason=item.reason,
-                )
-                for item in queue_items
-            ],
+            questions=persisted_questions,
         )

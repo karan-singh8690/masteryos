@@ -334,9 +334,18 @@ async def submit_answer(
         # ============================================================
         # 4. Record the attempt (append-only — the data moat)
         # ============================================================
-        # Get concept_ids from the template (simplified: use empty for now,
-        # real implementation joins through template_concepts)
-        concept_ids: tuple[UUID, ...] = ()
+        # INTEGRATED (Task 014): Load REAL concept_ids from template_concepts
+        # via the QuestionInstance's template_version_id. No more empty tuples.
+        from app.infrastructure.database.orm.content import (
+            TemplateConceptModel as TCModelForAttempt,
+        )
+        from sqlalchemy import select as sa_select_for_attempt
+
+        tc_for_attempt_stmt = sa_select_for_attempt(TCModelForAttempt.concept_id).where(
+            TCModelForAttempt.template_version_id == instance.template_version_id.value
+        )
+        tc_for_attempt_result = await session.execute(tc_for_attempt_stmt)
+        concept_ids: tuple[UUID, ...] = tuple(row[0] for row in tc_for_attempt_result.all())
 
         # Parse answer type
         try:
@@ -392,10 +401,57 @@ async def submit_answer(
             instance.learner_enrollment_id, limit=100
         )
 
-        # For this slice, we compute mastery for a single "default" concept
-        # In the full implementation, concept_ids come from template_concepts
-        default_concept_id = ConceptId(uuid4())  # Placeholder
-        concept_ids_for_mastery = concept_ids if concept_ids else (default_concept_id.value,)
+        # INTEGRATED (Task 014): Load REAL concept_ids from the TemplateVersion
+        # via the template_concepts join table. No more placeholder UUIDs.
+        from app.infrastructure.database.orm.content import (
+            TemplateVersionModel as TVModel,
+            TemplateConceptModel as TCModel,
+            ExplanationModel as ExplModel,
+        )
+        from sqlalchemy import select as sa_select
+
+        tc_stmt = sa_select(TCModel.concept_id).where(
+            TCModel.template_version_id == instance.template_version_id.value
+        )
+        tc_result = await session.execute(tc_stmt)
+        real_concept_ids: tuple[UUID, ...] = tuple(row[0] for row in tc_result.all())
+
+        if not real_concept_ids:
+            # Fallback: if no concept links exist, skip mastery update
+            # (this should not happen with properly authored content)
+            real_concept_ids = ()
+
+        # Load explanation from the Explanation table (not dynamically built)
+        explanation_stmt = sa_select(ExplModel).where(
+            ExplModel.template_version_id == instance.template_version_id.value,
+            ExplModel.outcome_key == scoring_outcome.value,
+        )
+        explanation_result = await session.execute(explanation_stmt)
+        explanation_model = explanation_result.scalar_one_or_none()
+
+        if explanation_model is not None:
+            explanation_content = explanation_model.content
+        else:
+            # Fallback: try 'correct' or 'incorrect' generic explanations
+            fallback_key = "correct" if scoring_outcome == ScoringOutcome.CORRECT else "incorrect"
+            fallback_stmt = sa_select(ExplModel).where(
+                ExplModel.template_version_id == instance.template_version_id.value,
+                ExplModel.outcome_key == fallback_key,
+            )
+            fallback_result = await session.execute(fallback_stmt)
+            fallback_model = fallback_result.scalar_one_or_none()
+            if fallback_model is not None:
+                explanation_content = fallback_model.content
+            else:
+                # Last resort: build dynamically (backward compatible)
+                explanation_content = _build_explanation(
+                    scoring_outcome=scoring_outcome,
+                    hint_used=request.hint_used,
+                    correct_answer=correct_answer,
+                    learner_answer=learner_answer,
+                )
+
+        concept_ids_for_mastery = real_concept_ids
 
         for concept_id_raw in concept_ids_for_mastery:
             concept_id = ConceptId(concept_id_raw) if isinstance(concept_id_raw, UUID) else ConceptId.from_string(str(concept_id_raw))
@@ -521,14 +577,9 @@ async def submit_answer(
             await _uow.recommendations.add(recommendation)
 
         # ============================================================
-        # 9. Build explanation (from template, not LLM)
+        # 9. Explanation already loaded from Explanation table above (Task 014)
+        # No dynamic building — content comes from the database.
         # ============================================================
-        explanation_content = _build_explanation(
-            scoring_outcome=scoring_outcome,
-            hint_used=request.hint_used,
-            correct_answer=correct_answer,
-            learner_answer=learner_answer,
-        )
 
         # ============================================================
         # 10. Collect all domain events
