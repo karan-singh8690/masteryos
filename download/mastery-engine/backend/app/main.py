@@ -74,6 +74,15 @@ def create_app() -> FastAPI:
     # Middleware
     # ================================
     app.add_middleware(CorrelationMiddleware)
+    # Security middleware (Task 015: production security hardening)
+    from app.presentation.middleware.security import (
+        SecurityHeadersMiddleware,
+        RateLimitMiddleware,
+        CSRFMiddleware,
+    )
+    app.add_middleware(CSRFMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

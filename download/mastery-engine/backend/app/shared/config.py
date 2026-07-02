@@ -82,13 +82,26 @@ class Settings(BaseSettings):
     # ================================
     # Security
     # ================================
-    jwt_secret_key: str = Field(
-        default="changeme_in_production_use_a_long_random_string",
-        description="JWT signing secret. MUST be overridden in production.",
-    )
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: str = "RS256"  # Production: RS256 (asymmetric). Never HS256.
+    jwt_issuer: str = "https://api.masteryengine.com"
+    jwt_audience: str = "mastery-engine-api"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
+    jwt_keys_dir: str | None = None  # Path to RSA key files; None = generate ephemeral (dev only)
+    jwt_clock_skew_seconds: int = 30
+
+    # Password hashing (Argon2id)
+    argon2_memory_cost: int = 19456  # KB (19 MB per OWASP 2024)
+    argon2_time_cost: int = 2
+    argon2_parallelism: int = 1
+
+    # Token TTLs
+    email_verification_token_ttl_hours: int = 24
+    password_reset_token_ttl_minutes: int = 15
+
+    # Session
+    session_idle_timeout_minutes: int = 60
+    session_absolute_timeout_days: int = 30
 
     # ================================
     # CORS
