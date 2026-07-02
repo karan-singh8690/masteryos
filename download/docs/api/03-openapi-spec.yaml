@@ -1,0 +1,3056 @@
+openapi: 3.1.0
+info:
+  title: Mastery Engine API
+  version: 1.0.0
+  description: |
+    The Mastery Engine API is the public and internal API surface for the Mastery Engine
+    adaptive learning platform.
+
+    This contract is the single source of truth for the API. Backend engineers implement
+    to it; frontend engineers build against it; SDK authors generate from it.
+
+    ## Conventions
+    - All timestamps are ISO 8601 with timezone (e.g., `2026-07-02T14:30:00Z`).
+    - All IDs are UUIDs (v7, time-ordered).
+    - Field names are `snake_case`.
+    - Errors use a standardized error object with `code`, `message`, `details`, `correlation_id`.
+    - Write operations support `Idempotency-Key` header for safe retries.
+    - Collections use cursor-based pagination.
+
+    ## Authentication
+    - JWT access tokens in `Authorization: Bearer <token>` header.
+    - Refresh tokens in HttpOnly cookies.
+    - OAuth (Google, GitHub) and MFA (TOTP) supported.
+
+    ## Versioning
+    - URI versioned: `/api/v1/...`.
+    - Breaking changes require a new major version.
+  contact:
+    name: Mastery Engine API Team
+    email: api@masteryengine.com
+    url: https://docs.masteryengine.com
+  license:
+    name: Proprietary
+    url: https://masteryengine.com/license
+
+servers:
+  - url: https://api.masteryengine.com/api/v1
+    description: Production
+  - url: https://staging-api.masteryengine.com/api/v1
+    description: Staging
+  - url: http://localhost:8000/api/v1
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Authentication
+    description: User registration, login, logout, token refresh, OAuth, MFA.
+  - name: Users
+    description: User identity and profile.
+  - name: Enrollments
+    description: Learner enrollments in subjects.
+  - name: Subjects
+    description: Curriculum units (Python, SQL, etc.).
+  - name: Learning Paths
+    description: Ordered concept traversals within a subject.
+  - name: Concepts
+    description: Atomic knowledge units.
+  - name: Question Templates
+    description: Parameterized question specifications.
+  - name: Study Sessions
+    description: Single practice sittings.
+  - name: Adaptive Queues
+    description: Session-scoped question queues.
+  - name: Attempts
+    description: Atomic learning evidence.
+  - name: Mastery Scores
+    description: Per-concept mastery estimates.
+  - name: Reviews
+    description: Scheduled spaced-repetition encounters.
+  - name: Recommendations
+    description: Advisory learning suggestions.
+  - name: Achievements
+    description: Earned recognitions (includes milestones).
+  - name: Dashboard
+    description: Aggregated landing data.
+  - name: Progress
+    description: Mastery-over-time and retention analytics.
+  - name: Notifications
+    description: User notifications.
+  - name: Billing
+    description: Subscriptions, plans, invoices.
+  - name: Search
+    description: Cross-resource search.
+  - name: Admin - Users
+    description: User management (admin).
+  - name: Admin - Content
+    description: Content authoring, review, publishing.
+  - name: Admin - Algorithm
+    description: Algorithm version management.
+  - name: Admin - System
+    description: Feature flags, settings, audit logs, GDPR.
+  - name: Admin - Analytics
+    description: Aggregate analytics.
+  - name: Webhooks
+    description: Webhook contracts for partner integrations.
+
+paths:
+  # ============================================================
+  # AUTHENTICATION
+  # ============================================================
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user
+      description: Creates a new user account with email/password. Sends verification email.
+      operationId: registerUser
+      x-command: RegisterUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              default:
+                value:
+                  email: alex@example.com
+                  password: SecurePass123!
+                  display_name: Alex Chen
+                  timezone: Asia/Kolkata
+      responses:
+        '201':
+          description: User created
+          headers:
+            Location:
+              schema: { type: string }
+              description: URL of the new user resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login with email/password
+      operationId: loginUser
+      x-command: LoginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: HttpOnly refresh token cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/oauth/{provider}/login:
+    post:
+      tags: [Authentication]
+      summary: Login or register via OAuth
+      operationId: loginWithOAuth
+      x-command: LoginWithOAuth
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/OAuthProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      operationId: refreshToken
+      x-command: RefreshToken
+      security: []
+      description: Uses the refresh token from the HttpOnly cookie. Rotates the refresh token.
+      responses:
+        '200':
+          description: New access token
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Logout (revoke current session)
+      operationId: logoutUser
+      x-command: LogoutUser
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/verify-email:
+    post:
+      tags: [Authentication]
+      summary: Verify email address
+      operationId: verifyEmail
+      x-command: VerifyEmail
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/password-reset/request:
+    post:
+      tags: [Authentication]
+      summary: Request password reset email
+      operationId: requestPasswordReset
+      x-command: RequestPasswordReset
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202':
+          description: Request accepted (always, to prevent email enumeration)
+
+  /auth/password-reset/confirm:
+    post:
+      tags: [Authentication]
+      summary: Reset password with token
+      operationId: resetPassword
+      x-command: ResetPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token: { type: string }
+                new_password: { type: string, minLength: 12 }
+      responses:
+        '200':
+          description: Password reset
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/mfa/enable:
+    post:
+      tags: [Authentication]
+      summary: Enable MFA (TOTP)
+      operationId: enableMFA
+      x-command: EnableMFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totp_code]
+              properties:
+                totp_code: { type: string, pattern: '^\d{6}$' }
+      responses:
+        '200':
+          description: MFA enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backup_codes:
+                    type: array
+                    items: { type: string }
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/mfa/disable:
+    post:
+      tags: [Authentication]
+      summary: Disable MFA
+      operationId: disableMFA
+      x-command: DisableMFA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verification]
+              properties:
+                verification: { type: string, description: Password or TOTP code }
+      responses:
+        '204':
+          description: MFA disabled
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/sessions:
+    get:
+      tags: [Authentication]
+      summary: List active sessions
+      operationId: getUserSessions
+      x-query: GetUserSessions
+      responses:
+        '200':
+          description: Active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/sessions/{session_id}/revoke:
+    post:
+      tags: [Authentication]
+      summary: Revoke a session
+      operationId: revokeSession
+      x-command: RevokeSession
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: Session revoked
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/sessions/revoke-all:
+    post:
+      tags: [Authentication]
+      summary: Revoke all sessions (log out everywhere)
+      operationId: revokeAllSessions
+      x-command: RevokeAllSessions
+      responses:
+        '204':
+          description: All sessions revoked
+
+  # ============================================================
+  # USERS & PROFILES
+  # ============================================================
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user
+      operationId: getCurrentUser
+      x-query: GetUser
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserWithProfile'
+    patch:
+      tags: [Users]
+      summary: Update current user's profile
+      operationId: updateCurrentUser
+      x-command: UpdateUserProfile
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserWithProfile'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/me/deletion:
+    post:
+      tags: [Users]
+      summary: Request account deletion (GDPR)
+      operationId: requestAccountDeletion
+      x-command: RequestAccountDeletion
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_email]
+              properties:
+                confirm_email: { type: string, format: email }
+      responses:
+        '202':
+          description: Deletion requested (14-day grace period)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scheduled_anonymization_at: { type: string, format: date-time }
+
+  /users/me/deletion/cancel:
+    post:
+      tags: [Users]
+      summary: Cancel pending account deletion
+      operationId: cancelAccountDeletion
+      x-command: CancelAccountDeletion
+      responses:
+        '200':
+          description: Deletion cancelled
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ============================================================
+  # ENROLLMENTS
+  # ============================================================
+  /enrollments:
+    get:
+      tags: [Enrollments]
+      summary: List my enrollments
+      operationId: listMyEnrollments
+      x-query: ListEnrollments
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: My enrollments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentList'
+    post:
+      tags: [Enrollments]
+      summary: Enroll in a subject
+      operationId: enrollInSubject
+      x-command: EnrollInSubject
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject_id]
+              properties:
+                subject_id: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /enrollments/{enrollment_id}:
+    get:
+      tags: [Enrollments]
+      summary: Get enrollment
+      operationId: getEnrollment
+      x-query: GetEnrollment
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Enrollment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /enrollments/{enrollment_id}/onboarding/complete:
+    post:
+      tags: [Enrollments]
+      summary: Complete onboarding (after diagnostic)
+      operationId: completeOnboarding
+      x-command: CompleteOnboarding
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Onboarding complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /enrollments/{enrollment_id}/unenroll:
+    post:
+      tags: [Enrollments]
+      summary: Unenroll from subject
+      operationId: unenrollFromSubject
+      x-command: UnenrollFromSubject
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Unenrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+
+  /enrollments/{enrollment_id}/learning-goals:
+    get:
+      tags: [Enrollments]
+      summary: List learning goals
+      operationId: listLearningGoals
+      x-query: ListLearningGoals
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Goals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LearningGoal'
+    post:
+      tags: [Enrollments]
+      summary: Set a learning goal
+      operationId: setLearningGoal
+      x-command: SetLearningGoal
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetLearningGoalRequest'
+      responses:
+        '201':
+          description: Goal set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningGoal'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /enrollments/{enrollment_id}/learning-goals/{goal_id}:
+    delete:
+      tags: [Enrollments]
+      summary: Clear (abandon) a learning goal
+      operationId: clearLearningGoal
+      x-command: ClearLearningGoal
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: goal_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Goal cleared
+
+  /enrollments/{enrollment_id}/study-plan:
+    get:
+      tags: [Enrollments]
+      summary: Get study plan
+      operationId: getStudyPlan
+      x-query: GetStudyPlan
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Study plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudyPlan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================
+  # SUBJECTS, CONCEPTS, LEARNING PATHS
+  # ============================================================
+  /subjects:
+    get:
+      tags: [Subjects]
+      summary: List published subjects
+      operationId: listSubjects
+      x-query: ListSubjects
+      responses:
+        '200':
+          description: Subjects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subject'
+
+  /subjects/{subject_id}:
+    get:
+      tags: [Subjects]
+      summary: Get subject
+      operationId: getSubject
+      x-query: GetSubject
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+      responses:
+        '200':
+          description: Subject
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /subjects/{subject_id}/learning-paths:
+    get:
+      tags: [Learning Paths]
+      summary: List learning paths for a subject
+      operationId: listLearningPaths
+      x-query: ListLearningPaths
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+      responses:
+        '200':
+          description: Paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LearningPath'
+
+  /subjects/{subject_id}/learning-paths/{path_id}:
+    get:
+      tags: [Learning Paths]
+      summary: Get learning path with items
+      operationId: getLearningPath
+      x-query: GetLearningPath
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - name: path_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Path
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningPath'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /subjects/{subject_id}/concepts:
+    get:
+      tags: [Concepts]
+      summary: List concepts in a subject
+      operationId: listConcepts
+      x-query: ListConcepts
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: difficulty
+          in: query
+          schema: { type: string, enum: [easy, medium, hard] }
+        - name: include_archived
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Concepts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConceptList'
+
+  /subjects/{subject_id}/concepts/{concept_slug}:
+    get:
+      tags: [Concepts]
+      summary: Get concept by slug
+      operationId: getConcept
+      x-query: GetConcept
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - name: concept_slug
+          in: path
+          required: true
+          schema: { type: string }
+        - name: expand
+          in: query
+          schema: { type: string, description: 'Comma-separated: objectives,misconceptions,dependencies' }
+      responses:
+        '200':
+          description: Concept
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Concept'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================
+  # STUDY SESSIONS & ADAPTIVE QUEUES
+  # ============================================================
+  /study-sessions:
+    post:
+      tags: [Study Sessions]
+      summary: Start a study session
+      operationId: startStudySession
+      x-command: StartStudySession
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSessionRequest'
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySessionWithQueue'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /study-sessions/{session_id}:
+    get:
+      tags: [Study Sessions]
+      summary: Get study session
+      operationId: getStudySession
+      x-query: GetStudySession
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /study-sessions/{session_id}/resume:
+    post:
+      tags: [Study Sessions]
+      summary: Resume a paused session
+      operationId: resumeStudySession
+      x-command: ResumeStudySession
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySessionWithQueue'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /study-sessions/{session_id}/pause:
+    post:
+      tags: [Study Sessions]
+      summary: Pause a session
+      operationId: pauseStudySession
+      x-command: PauseStudySession
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '204':
+          description: Paused
+
+  /study-sessions/{session_id}/end:
+    post:
+      tags: [Study Sessions]
+      summary: End a session
+      operationId: endStudySession
+      x-command: EndStudySession
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Session ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionAnalytics'
+
+  /study-sessions/{session_id}/adaptive-queue:
+    get:
+      tags: [Adaptive Queues]
+      summary: Get current adaptive queue
+      operationId: getAdaptiveQueue
+      x-query: GetAdaptiveQueue
+      parameters:
+        - $ref: '#/components/parameters/SessionIdPath'
+      responses:
+        '200':
+          description: Queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdaptiveQueue'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /enrollments/{enrollment_id}/daily-queue:
+    get:
+      tags: [Adaptive Queues]
+      summary: Get today's daily queue
+      operationId: getDailyQueue
+      x-query: GetDailyQueue
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Daily queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyQueue'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================
+  # ATTEMPTS & QUESTION INSTANCES
+  # ============================================================
+  /attempts:
+    post:
+      tags: [Attempts]
+      summary: Submit an answer (create an attempt)
+      operationId: submitAnswer
+      x-command: SubmitAnswer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAnswerRequest'
+      responses:
+        '201':
+          description: Attempt recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptResult'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /question-instances/{instance_id}/hint:
+    post:
+      tags: [Attempts]
+      summary: Request a hint
+      operationId: requestHint
+      x-command: RequestHint
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Hint content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tier: { type: integer, enum: [1, 2, 3] }
+                  content: { type: string }
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /question-instances/{instance_id}/abandon:
+    post:
+      tags: [Attempts]
+      summary: Abandon a question
+      operationId: abandonQuestion
+      x-command: AbandonQuestion
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Abandoned
+
+  /question-instances/{instance_id}/execute-code:
+    post:
+      tags: [Attempts]
+      summary: Execute code (pre-submission testing)
+      operationId: executeCode
+      x-command: ExecuteCode
+      parameters:
+        - name: instance_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: Execution results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeExecutionResult'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /enrollments/{enrollment_id}/attempts:
+    get:
+      tags: [Attempts]
+      summary: List attempt history
+      operationId: listAttempts
+      x-query: GetAttemptHistory
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: created_after
+          in: query
+          schema: { type: string, format: date-time }
+        - name: created_before
+          in: query
+          schema: { type: string, format: date-time }
+        - name: concept_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttemptList'
+
+  # ============================================================
+  # MASTERY SCORES, REVIEWS, RECOMMENDATIONS
+  # ============================================================
+  /enrollments/{enrollment_id}/mastery-scores:
+    get:
+      tags: [Mastery Scores]
+      summary: List mastery scores
+      operationId: listMasteryScores
+      x-query: GetConceptProgress
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: weak_only
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Mastery scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MasteryScore'
+
+  /enrollments/{enrollment_id}/mastery-scores/{concept_id}:
+    get:
+      tags: [Mastery Scores]
+      summary: Get mastery score for a concept
+      operationId: getMasteryScore
+      x-query: GetMasteryScore
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: concept_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Mastery score
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MasteryScore'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /enrollments/{enrollment_id}/reviews/due:
+    get:
+      tags: [Reviews]
+      summary: List due reviews
+      operationId: listDueReviews
+      x-query: GetDueReviews
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Due reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Review'
+
+  /enrollments/{enrollment_id}/recommendations:
+    get:
+      tags: [Recommendations]
+      summary: List recommendations
+      operationId: listRecommendations
+      x-query: GetRecommendations
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, presented, accepted, deferred, dismissed] }
+      responses:
+        '200':
+          description: Recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Recommendation'
+
+  /recommendations/{recommendation_id}/dismiss:
+    post:
+      tags: [Recommendations]
+      summary: Dismiss a recommendation
+      operationId: dismissRecommendation
+      x-command: DismissRecommendation
+      parameters:
+        - name: recommendation_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Dismissed
+
+  # ============================================================
+  # ACHIEVEMENTS, STREAKS, DASHBOARD, PROGRESS
+  # ============================================================
+  /enrollments/{enrollment_id}/achievements:
+    get:
+      tags: [Achievements]
+      summary: List achievements (includes milestones)
+      operationId: listAchievements
+      x-query: GetAchievements
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: category
+          in: query
+          schema: { type: string, enum: [milestone, graduation, streak, special] }
+      responses:
+        '200':
+          description: Achievements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Achievement'
+
+  /enrollments/{enrollment_id}/streak:
+    get:
+      tags: [Achievements]
+      summary: Get streak
+      operationId: getStreak
+      x-query: GetStreak
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Streak
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Streak'
+
+  /dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Get dashboard data
+      operationId: getDashboard
+      x-query: GetDashboard
+      parameters:
+        - name: enrollment_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Dashboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+
+  /enrollments/{enrollment_id}/progress:
+    get:
+      tags: [Progress]
+      summary: Get progress analytics
+      operationId: getProgress
+      x-query: GetConceptProgress
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Progress'
+
+  /enrollments/{enrollment_id}/interview-readiness:
+    get:
+      tags: [Progress]
+      summary: Get interview readiness score
+      operationId: getInterviewReadiness
+      x-query: GetInterviewReadiness
+      parameters:
+        - $ref: '#/components/parameters/EnrollmentId'
+      responses:
+        '200':
+          description: Readiness
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterviewReadiness'
+
+  # ============================================================
+  # NOTIFICATIONS
+  # ============================================================
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List my notifications
+      operationId: listNotifications
+      x-query: GetNotifications
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: { type: string, enum: [queued, sent, delivered, opened, dismissed] }
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+
+  /notifications/{notification_id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification as read
+      operationId: markNotificationRead
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Marked read
+
+  /notifications/{notification_id}/dismiss:
+    post:
+      tags: [Notifications]
+      summary: Dismiss a notification
+      operationId: dismissNotification
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Dismissed
+
+  # ============================================================
+  # BILLING
+  # ============================================================
+  /billing/plans:
+    get:
+      tags: [Billing]
+      summary: List billing plans
+      operationId: listBillingPlans
+      x-query: GetBillingPlans
+      responses:
+        '200':
+          description: Plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BillingPlan'
+
+  /billing/subscriptions:
+    post:
+      tags: [Billing]
+      summary: Subscribe to a plan
+      operationId: subscribeToPlan
+      x-command: SubscribeToPlan
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [billing_plan_id, payment_method_id]
+              properties:
+                billing_plan_id: { type: string, format: uuid }
+                payment_method_id: { type: string, description: Stripe payment method ID }
+      responses:
+        '201':
+          description: Subscribed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+
+  /billing/subscriptions/me:
+    get:
+      tags: [Billing]
+      summary: Get my subscription
+      operationId: getMySubscription
+      x-query: GetSubscription
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /billing/subscriptions/me/upgrade:
+    post:
+      tags: [Billing]
+      summary: Upgrade subscription
+      operationId: upgradeSubscription
+      x-command: UpgradeSubscription
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [billing_plan_id]
+              properties:
+                billing_plan_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Upgraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+
+  /billing/subscriptions/me/cancel:
+    post:
+      tags: [Billing]
+      summary: Cancel subscription
+      operationId: cancelSubscription
+      x-command: CancelSubscription
+      responses:
+        '200':
+          description: Canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /billing/invoices:
+    get:
+      tags: [Billing]
+      summary: List my invoices
+      operationId: listInvoices
+      x-query: GetInvoices
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+
+  /billing/webhooks/stripe:
+    post:
+      tags: [Billing]
+      summary: Stripe webhook receiver
+      operationId: processStripeWebhook
+      x-command: ProcessPaymentWebhook
+      security: []
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Webhook processed
+
+  # ============================================================
+  # SEARCH
+  # ============================================================
+  /search:
+    get:
+      tags: [Search]
+      summary: Search across resources
+      operationId: search
+      x-query: SearchConcepts
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string, enum: [concepts, templates, all] }
+        - name: subject_id
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+
+  # ============================================================
+  # ADMIN - USERS
+  # ============================================================
+  /admin/users:
+    get:
+      tags: [Admin - Users]
+      summary: Search users (admin)
+      operationId: adminSearchUsers
+      x-query: SearchUsers
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending_verification, active, suspended, deactivated, pending_deletion, anonymized] }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserList'
+
+  /admin/users/{user_id}/suspend:
+    post:
+      tags: [Admin - Users]
+      summary: Suspend a user
+      operationId: adminSuspendUser
+      x-command: SuspendUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/users/{user_id}/reactivate:
+    post:
+      tags: [Admin - Users]
+      summary: Reactivate a suspended user
+      operationId: adminReactivateUser
+      x-command: ReactivateUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Reactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /admin/users/{user_id}/roles:
+    post:
+      tags: [Admin - Users]
+      summary: Grant a role
+      operationId: adminGrantRole
+      x-command: GrantRole
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, scope]
+              properties:
+                role: { type: string, enum: [learner, instructor, administrator, mentor] }
+                scope: { type: string, format: uuid, description: subject_id for instructor }
+      responses:
+        '201':
+          description: Role granted
+
+  /admin/users/{user_id}/roles/{role}:
+    delete:
+      tags: [Admin - Users]
+      summary: Revoke a role
+      operationId: adminRevokeRole
+      x-command: RevokeRole
+      parameters:
+        - $ref: '#/components/parameters/UserIdPath'
+        - name: role
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Role revoked
+
+  # ============================================================
+  # ADMIN - SUBJECTS & CONTENT
+  # ============================================================
+  /admin/subjects:
+    post:
+      tags: [Admin - Content]
+      summary: Create a subject
+      operationId: adminCreateSubject
+      x-command: CreateSubject
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubjectRequest'
+      responses:
+        '201':
+          description: Subject created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+
+  /admin/subjects/{subject_id}/publish:
+    post:
+      tags: [Admin - Content]
+      summary: Publish a subject
+      operationId: adminPublishSubject
+      x-command: PublishSubject
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+
+  /admin/subjects/{subject_id}/deprecate:
+    post:
+      tags: [Admin - Content]
+      summary: Deprecate a subject
+      operationId: adminDeprecateSubject
+      x-command: DeprecateSubject
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+      responses:
+        '200':
+          description: Deprecated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+
+  /admin/subjects/{subject_id}/concepts:
+    post:
+      tags: [Admin - Content]
+      summary: Create a concept
+      operationId: adminCreateConcept
+      x-command: CreateConcept
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConceptRequest'
+      responses:
+        '201':
+          description: Concept created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Concept'
+
+  /admin/subjects/{subject_id}/concepts/{concept_id}:
+    patch:
+      tags: [Admin - Content]
+      summary: Revise a concept
+      operationId: adminReviseConcept
+      x-command: ReviseConcept
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - name: concept_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConceptRequest'
+      responses:
+        '200':
+          description: Revised
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Concept'
+
+  /admin/concepts/{concept_id}/dependencies:
+    post:
+      tags: [Admin - Content]
+      summary: Add a concept dependency
+      operationId: adminAddConceptDependency
+      x-command: AddConceptDependency
+      parameters:
+        - name: concept_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_concept_id, dependency_type]
+              properties:
+                target_concept_id: { type: string, format: uuid }
+                dependency_type: { type: string, enum: [prerequisite, related, reinforces] }
+                weight: { type: string, enum: [weak, strong], default: strong }
+      responses:
+        '201':
+          description: Dependency added
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /admin/concepts/{concept_id}/learning-objectives:
+    post:
+      tags: [Admin - Content]
+      summary: Create a learning objective
+      operationId: adminCreateLearningObjective
+      x-command: CreateLearningObjective
+      parameters:
+        - name: concept_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [statement]
+              properties:
+                statement: { type: string }
+      responses:
+        '201':
+          description: Objective created
+
+  /admin/learning-objectives/{objective_id}/misconceptions:
+    post:
+      tags: [Admin - Content]
+      summary: Create a misconception
+      operationId: adminCreateMisconception
+      x-command: CreateMisconception
+      parameters:
+        - name: objective_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMisconceptionRequest'
+      responses:
+        '201':
+          description: Misconception created
+
+  /admin/subjects/{subject_id}/question-templates:
+    post:
+      tags: [Admin - Content]
+      summary: Create a question template
+      operationId: adminCreateQuestionTemplate
+      x-command: CreateQuestionTemplate
+      parameters:
+        - $ref: '#/components/parameters/SubjectId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuestionTemplateRequest'
+      responses:
+        '201':
+          description: Template created
+
+  /admin/question-templates/{template_id}:
+    patch:
+      tags: [Admin - Content]
+      summary: Revise a question template
+      operationId: adminReviseQuestionTemplate
+      x-command: ReviseQuestionTemplate
+      parameters:
+        - name: template_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQuestionTemplateRequest'
+      responses:
+        '200':
+          description: Revised
+
+  /admin/content-packs:
+    post:
+      tags: [Admin - Content]
+      summary: Submit a content pack for review
+      operationId: adminSubmitContentPack
+      x-command: SubmitContentPackForReview
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitContentPackRequest'
+      responses:
+        '201':
+          description: Submitted for review
+
+  /admin/content-packs/{pack_id}/approve:
+    post:
+      tags: [Admin - Content]
+      summary: Approve a content pack at a review stage
+      operationId: adminApproveContentPack
+      x-command: ApproveContentPack
+      parameters:
+        - name: pack_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stage, decision]
+              properties:
+                stage: { type: string, enum: [peer, editorial, qa] }
+                decision: { type: string, enum: [approve, request_changes, reject] }
+                notes: { type: string }
+      responses:
+        '200':
+          description: Reviewed
+
+  /admin/content-versions/{version_id}:
+    get:
+      tags: [Admin - Content]
+      summary: Get a content version
+      operationId: adminGetContentVersion
+      x-query: GetContentVersion
+      parameters:
+        - name: version_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Content version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentVersion'
+
+  /admin/content/{content_type}/{content_id}/archive:
+    post:
+      tags: [Admin - Content]
+      summary: Archive content
+      operationId: adminArchiveContent
+      x-command: ArchiveContent
+      parameters:
+        - name: content_type
+          in: path
+          required: true
+          schema: { type: string, enum: [concept, question_template, learning_path] }
+        - name: content_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Archived
+
+  # ============================================================
+  # ADMIN - ALGORITHM VERSIONS
+  # ============================================================
+  /admin/algorithm-versions:
+    get:
+      tags: [Admin - Algorithm]
+      summary: List algorithm versions
+      operationId: adminListAlgorithmVersions
+      x-query: GetAlgorithmVersion
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlgorithmVersion'
+
+  /admin/algorithm-versions/{version_id}/publish:
+    post:
+      tags: [Admin - Algorithm]
+      summary: Promote an algorithm version to production
+      operationId: adminPublishAlgorithmVersion
+      x-command: PublishAlgorithmVersion
+      parameters:
+        - name: version_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlgorithmVersion'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================
+  # ADMIN - SYSTEM (Feature Flags, Settings, Audit, GDPR)
+  # ============================================================
+  /admin/feature-flags:
+    get:
+      tags: [Admin - System]
+      summary: List feature flags
+      operationId: adminListFeatureFlags
+      x-query: GetFeatureFlags
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FeatureFlag'
+    post:
+      tags: [Admin - System]
+      summary: Create a feature flag
+      operationId: adminCreateFeatureFlag
+      x-command: CreateFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFeatureFlagRequest'
+      responses:
+        '201':
+          description: Flag created
+
+  /admin/feature-flags/{flag_id}:
+    patch:
+      tags: [Admin - System]
+      summary: Update a feature flag
+      operationId: adminUpdateFeatureFlag
+      x-command: UpdateFeatureFlag
+      parameters:
+        - name: flag_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFeatureFlagRequest'
+      responses:
+        '200':
+          description: Updated
+
+  /admin/system-settings:
+    get:
+      tags: [Admin - System]
+      summary: List system settings
+      operationId: adminListSystemSettings
+      x-query: GetSystemSettings
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SystemSetting'
+
+  /admin/system-settings/{key}:
+    put:
+      tags: [Admin - System]
+      summary: Update a system setting
+      operationId: adminUpdateSystemSetting
+      x-command: UpdateSystemSetting
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: {}
+      responses:
+        '200':
+          description: Updated
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin - System]
+      summary: Search audit logs
+      operationId: adminSearchAuditLogs
+      x-query: GetAuditLogs
+      parameters:
+        - name: actor_user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: target_type
+          in: query
+          schema: { type: string }
+        - name: target_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: created_after
+          in: query
+          schema: { type: string, format: date-time }
+        - name: created_before
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+
+  /admin/gdpr-requests:
+    get:
+      tags: [Admin - System]
+      summary: List GDPR requests
+      operationId: adminListGDPRRequests
+      x-query: GetGDPRRequests
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, processing, completed, rejected] }
+      responses:
+        '200':
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GDPRRequest'
+
+  /admin/gdpr-requests/{request_id}/process:
+    post:
+      tags: [Admin - System]
+      summary: Process a GDPR request
+      operationId: adminProcessGDPRRequest
+      x-command: ProcessGDPRRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Processed
+
+  # ============================================================
+  # ADMIN - ANALYTICS
+  # ============================================================
+  /admin/analytics/concepts/{concept_id}/statistics:
+    get:
+      tags: [Admin - Analytics]
+      summary: Get concept statistics
+      operationId: adminGetConceptStatistics
+      x-query: GetConceptStatistics
+      parameters:
+        - name: concept_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConceptStatistics'
+
+  /admin/analytics/cohorts/retention:
+    get:
+      tags: [Admin - Analytics]
+      summary: Get cohort retention analytics
+      operationId: adminGetCohortRetention
+      x-query: GetRetentionAnalytics
+      parameters:
+        - name: subject_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: cohort_start
+          in: query
+          schema: { type: string, format: date }
+        - name: cohort_end
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Retention data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CohortRetention'
+
+  # ============================================================
+  # WEBHOOKS (partner-facing)
+  # ============================================================
+  /webhooks/events:
+    get:
+      tags: [Webhooks]
+      summary: List webhook deliveries (partner)
+      operationId: listWebhookDeliveries
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: event_type
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Deliveries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookDelivery'
+
+# ============================================================
+# COMPONENTS
+# ============================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token. Obtain via /auth/login or /auth/refresh.
+
+  parameters:
+    PageSize:
+      name: page_size
+      in: query
+      description: Number of items per page (max 100).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from the previous response.
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Client-generated UUID for safe retries. Server caches results for 24h.
+      schema:
+        type: string
+        format: uuid
+    SubjectId:
+      name: subject_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EnrollmentId:
+      name: enrollment_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionIdPath:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserIdPath:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OAuthProvider:
+      name: provider
+      in: path
+      required: true
+      schema: { type: string, enum: [google, github] }
+
+  responses:
+    Unauthorized:
+      description: Authentication missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated but not authorized.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Request conflicts with current state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Semantic validation failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer, description: Seconds to wait before retrying. }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PaymentRequired:
+      description: Payment required or failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: Service temporarily unavailable.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ---------- Common ----------
+    Error:
+      type: object
+      required: [code, message, correlation_id]
+      properties:
+        code:
+          type: string
+          description: SCREAMING_SNAKE_CASE error code.
+          example: EMAIL_ALREADY_REGISTERED
+        message:
+          type: string
+          description: Human-readable message.
+        details:
+          type: object
+          description: Field-level validation errors or additional context.
+          additionalProperties: true
+        correlation_id:
+          type: string
+          format: uuid
+          description: For support and log tracing.
+        timestamp:
+          type: string
+          format: date-time
+        doc_url:
+          type: string
+          format: uri
+          description: Link to error documentation.
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying (for rate limits).
+
+    Pagination:
+      type: object
+      properties:
+        cursor:
+          type: string
+          nullable: true
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+        total_count:
+          type: integer
+          nullable: true
+
+    # ---------- Auth ----------
+    RegisterRequest:
+      type: object
+      required: [email, password, display_name]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12, description: Strong password. }
+        display_name: { type: string, maxLength: 100 }
+        timezone: { type: string, default: UTC, description: IANA timezone. }
+        locale: { type: string, default: en-US }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        mfa_code: { type: string, pattern: '^\d{6}$', description: Required if MFA enabled. }
+
+    OAuthLoginRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, description: OAuth authorization code. }
+        redirect_uri: { type: string, format: uri }
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        expires_in: { type: integer, description: Seconds until access token expires. }
+        user:
+          $ref: '#/components/schemas/User'
+
+    RefreshResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        expires_in: { type: integer }
+
+    # ---------- Users ----------
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        status: { type: string, enum: [pending_verification, active, suspended, deactivated, pending_deletion, anonymized] }
+        mfa_enabled: { type: boolean }
+        email_verified_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    UserWithProfile:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            profile:
+              $ref: '#/components/schemas/Profile'
+
+    Profile:
+      type: object
+      properties:
+        display_name: { type: string }
+        timezone: { type: string }
+        locale: { type: string }
+        avatar_url: { type: string, nullable: true }
+        preferences: { type: object, additionalProperties: true }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        display_name: { type: string, maxLength: 100 }
+        timezone: { type: string }
+        locale: { type: string }
+        avatar_url: { type: string }
+        preferences: { type: object, additionalProperties: true }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        device_fingerprint: { type: string, nullable: true }
+        last_ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        expires_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+
+    # ---------- Enrollments ----------
+    Enrollment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        learning_path_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [pending_onboarding, active, dormant, unenrolled] }
+        enrolled_at: { type: string, format: date-time }
+        onboarded_at: { type: string, format: date-time, nullable: true }
+        last_active_at: { type: string, format: date-time, nullable: true }
+
+    EnrollmentList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Enrollment' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    LearningGoal:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        goal_type: { type: string, enum: [interview_date, daily_commitment, session_intent, mastery_target] }
+        target_date: { type: string, format: date, nullable: true }
+        parameters: { type: object }
+        status: { type: string, enum: [active, completed, abandoned] }
+        created_at: { type: string, format: date-time }
+
+    SetLearningGoalRequest:
+      type: object
+      required: [goal_type]
+      properties:
+        goal_type: { type: string, enum: [interview_date, daily_commitment, session_intent, mastery_target] }
+        target_date: { type: string, format: date }
+        parameters: { type: object }
+
+    StudyPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projected_graduation_date: { type: string, format: date, nullable: true }
+        weekly_schedule: { type: object }
+        feasibility_status: { type: string, enum: [feasible, at_risk, infeasible] }
+        generated_at: { type: string, format: date-time }
+
+    # ---------- Subjects, Concepts ----------
+    Subject:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, deprecated] }
+        published_at: { type: string, format: date-time, nullable: true }
+
+    CreateSubjectRequest:
+      type: object
+      required: [code, name, slug]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+
+    LearningPath:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        graduation_criteria: { type: object }
+        estimated_duration_hours: { type: integer, nullable: true }
+        status: { type: string, enum: [draft, published, deprecated] }
+        items:
+          type: array
+          description: Ordered concept list (only present when expanded).
+          items:
+            type: object
+            properties:
+              position: { type: integer }
+              concept_id: { type: string, format: uuid }
+              is_optional: { type: boolean }
+
+    Concept:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        importance: { type: string, enum: [low, medium, high] }
+        status: { type: string, enum: [draft, published, deprecated] }
+        objectives:
+          type: array
+          description: Only present when expanded.
+          items: { $ref: '#/components/schemas/LearningObjective' }
+        misconceptions:
+          type: array
+          description: Only present when expanded.
+          items: { $ref: '#/components/schemas/Misconception' }
+
+    ConceptList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Concept' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    CreateConceptRequest:
+      type: object
+      required: [slug, name, description]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        difficulty: { type: string, enum: [easy, medium, hard], default: medium }
+        importance: { type: string, enum: [low, medium, high], default: medium }
+
+    UpdateConceptRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        difficulty: { type: string, enum: [easy, medium, hard] }
+        importance: { type: string, enum: [low, medium, high] }
+
+    LearningObjective:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        concept_id: { type: string, format: uuid }
+        statement: { type: string }
+        status: { type: string, enum: [draft, published, deprecated] }
+
+    Misconception:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learning_objective_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        remediation: { type: string, nullable: true }
+        status: { type: string, enum: [draft, published, deprecated] }
+
+    CreateMisconceptionRequest:
+      type: object
+      required: [name, description]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        remediation: { type: string }
+
+    # ---------- Question Templates ----------
+    QuestionTemplate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        code: { type: string }
+        question_type: { type: string, enum: [multiple_choice, code_execution, free_response] }
+        status: { type: string, enum: [draft, in_review, published, deprecated] }
+        current_version_id: { type: string, format: uuid, nullable: true }
+
+    CreateQuestionTemplateRequest:
+      type: object
+      required: [code, question_type, parameter_schema, prompt_template]
+      properties:
+        code: { type: string }
+        question_type: { type: string, enum: [multiple_choice, code_execution, free_response] }
+        parameter_schema: { type: object, description: JSON Schema for parameters. }
+        prompt_template: { type: object }
+        correct_answer_generator: { type: object }
+        distractor_generator: { type: object, nullable: true }
+        explanation_template: { type: object }
+        difficulty_estimate: { type: string, enum: [easy, medium, hard] }
+
+    UpdateQuestionTemplateRequest:
+      type: object
+      properties:
+        parameter_schema: { type: object }
+        prompt_template: { type: object }
+        correct_answer_generator: { type: object }
+        distractor_generator: { type: object }
+        explanation_template: { type: object }
+        difficulty_estimate: { type: string, enum: [easy, medium, hard] }
+
+    # ---------- Study Sessions & Queues ----------
+    StartSessionRequest:
+      type: object
+      required: [enrollment_id, intent]
+      properties:
+        enrollment_id: { type: string, format: uuid }
+        intent: { type: string, enum: [drill, diagnostic, review, mixed] }
+        target_question_count: { type: integer, minimum: 1, maximum: 50 }
+
+    StudySession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        intent: { type: string, enum: [drill, diagnostic, review, mixed] }
+        status: { type: string, enum: [active, paused, ended, abandoned] }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+        question_count: { type: integer }
+
+    StudySessionWithQueue:
+      allOf:
+        - $ref: '#/components/schemas/StudySession'
+        - type: object
+          properties:
+            queue:
+              $ref: '#/components/schemas/AdaptiveQueue'
+
+    AdaptiveQueue:
+      type: object
+      properties:
+        study_session_id: { type: string, format: uuid }
+        current_position: { type: integer }
+        questions:
+          type: array
+          items: { $ref: '#/components/schemas/QuestionInstance' }
+
+    DailyQueue:
+      type: object
+      properties:
+        learner_enrollment_id: { type: string, format: uuid }
+        queue_date: { type: string, format: date }
+        questions:
+          type: array
+          items: { $ref: '#/components/schemas/QuestionInstance' }
+        completed_count: { type: integer }
+
+    # ---------- Attempts ----------
+    QuestionInstance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        template_version_id: { type: string, format: uuid }
+        rendered_prompt: { type: object }
+        rendered_choices: { type: array, nullable: true, items: { type: object } }
+        served_at: { type: string, format: date-time }
+        status: { type: string, enum: [served, answered, abandoned] }
+
+    SubmitAnswerRequest:
+      type: object
+      required: [question_instance_id, answer]
+      properties:
+        question_instance_id: { type: string, format: uuid }
+        answer:
+          type: object
+          description: Answer payload; shape depends on question type.
+          properties:
+            answer_type: { type: string, enum: [multiple_choice, code, free_response] }
+            submitted_answer: {}
+            execution_result: { type: object, nullable: true }
+
+    AttemptResult:
+      type: object
+      properties:
+        attempt_id: { type: string, format: uuid }
+        scoring_outcome: { type: string, enum: [correct, incorrect, partial] }
+        partial_credit: { type: number, nullable: true }
+        explanation:
+          type: object
+          properties:
+            content: { type: string }
+            outcome_key: { type: string }
+        next_question:
+          $ref: '#/components/schemas/QuestionInstance'
+          nullable: true
+        updated_mastery:
+          $ref: '#/components/schemas/MasteryScore'
+          nullable: true
+          description: Updated mastery for the tested concept (may be null if async).
+
+    Attempt:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        question_instance_id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        scoring_outcome: { type: string, enum: [correct, incorrect, partial] }
+        time_to_answer_ms: { type: integer }
+        hint_used: { type: boolean }
+        misconception_id: { type: string, format: uuid, nullable: true }
+        attempt_intent: { type: string, enum: [practice, review, diagnostic] }
+        created_at: { type: string, format: date-time }
+
+    AttemptList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Attempt' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    CodeExecutionResult:
+      type: object
+      properties:
+        success: { type: boolean }
+        pass_count: { type: integer }
+        fail_count: { type: integer }
+        output: { type: string }
+        execution_time_ms: { type: integer }
+
+    SessionAnalytics:
+      type: object
+      properties:
+        study_session_id: { type: string, format: uuid }
+        question_count: { type: integer }
+        success_rate: { type: number }
+        mastery_delta: { type: number }
+        duration_seconds: { type: integer }
+        concepts_covered:
+          type: array
+          items: { type: string, format: uuid }
+
+    # ---------- Mastery ----------
+    MasteryScore:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        concept_id: { type: string, format: uuid }
+        memory_score: { type: number, format: float, minimum: 0, maximum: 1 }
+        durable_mastery_score: { type: number, format: float, minimum: 0, maximum: 1 }
+        mastery_score_combined: { type: number, format: float, minimum: 0, maximum: 1 }
+        confidence_interval: { type: number, format: float }
+        evidence_count: { type: integer }
+        concept_state: { type: string, enum: [unseen, novice, developing, proficient, mastered, decayed] }
+        weakness_severity: { type: string, enum: [none, mild, moderate, severe] }
+        last_attempt_at: { type: string, format: date-time, nullable: true }
+        last_updated_at: { type: string, format: date-time }
+
+    Review:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        concept_id: { type: string, format: uuid }
+        due_at: { type: string, format: date-time }
+        priority: { type: string, enum: [low, medium, high] }
+        review_interval: { type: string, description: ISO 8601 duration. }
+        last_reviewed_at: { type: string, format: date-time, nullable: true }
+
+    # ---------- Recommendations, Achievements ----------
+    Recommendation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        recommendation_type: { type: string }
+        payload: { type: object }
+        recommendation_score: { type: number, format: float, minimum: 0, maximum: 1 }
+        status: { type: string, enum: [pending, presented, accepted, deferred, dismissed] }
+        created_at: { type: string, format: date-time }
+
+    Achievement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        learner_enrollment_id: { type: string, format: uuid }
+        achievement_type_id: { type: string, format: uuid }
+        achievement_type_code: { type: string }
+        name: { type: string }
+        category: { type: string, enum: [milestone, graduation, streak, special] }
+        criteria_snapshot: { type: object }
+        awarded_at: { type: string, format: date-time }
+
+    Streak:
+      type: object
+      properties:
+        learner_enrollment_id: { type: string, format: uuid }
+        current_streak: { type: integer }
+        longest_streak: { type: integer }
+        last_study_date: { type: string, format: date, nullable: true }
+
+    # ---------- Dashboard, Progress ----------
+    Dashboard:
+      type: object
+      properties:
+        recommended_next_action:
+          type: object
+          properties:
+            action_type: { type: string, enum: [start_session, review_due, drill_weak, diagnostic] }
+            label: { type: string }
+            enrollment_id: { type: string, format: uuid }
+        streak:
+          $ref: '#/components/schemas/Streak'
+        weak_concepts:
+          type: array
+          items: { $ref: '#/components/schemas/MasteryScore' }
+        subjects:
+          type: array
+          items:
+            type: object
+            properties:
+              enrollment_id: { type: string, format: uuid }
+              subject: { $ref: '#/components/schemas/Subject' }
+              interview_readiness: { type: number }
+
+    Progress:
+      type: object
+      properties:
+        mastery_over_time:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              avg_mastery: { type: number }
+        concept_state_distribution:
+          type: object
+          additionalProperties: { type: integer }
+        learning_velocity:
+          type: object
+          properties:
+            concepts_per_week: { type: number }
+            trend: { type: string, enum: [increasing, stable, decreasing] }
+        retention:
+          type: object
+          properties:
+            retention_30d: { type: number }
+            retention_90d: { type: number }
+
+    InterviewReadiness:
+      type: object
+      properties:
+        readiness_score: { type: number, format: float, minimum: 0, maximum: 1 }
+        confidence_interval: { type: number }
+        breakdown:
+          type: object
+          properties:
+            mastery_distribution: { type: object }
+            retention: { type: number }
+            interview_question_performance: { type: number }
+
+    # ---------- Notifications ----------
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        notification_type: { type: string }
+        channel: { type: string, enum: [email, push, in_app] }
+        payload: { type: object }
+        status: { type: string, enum: [queued, sent, delivered, opened, dismissed] }
+        created_at: { type: string, format: date-time }
+
+    NotificationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    # ---------- Billing ----------
+    BillingPlan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        price_cents: { type: integer }
+        currency: { type: string }
+        billing_period: { type: string, enum: [monthly, annual] }
+        entitlements: { type: object }
+        is_active: { type: boolean }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        billing_plan: { $ref: '#/components/schemas/BillingPlan' }
+        status: { type: string, enum: [active, past_due, canceled, expired] }
+        current_period_start: { type: string, format: date }
+        current_period_end: { type: string, format: date }
+        canceled_at: { type: string, format: date, nullable: true }
+
+    Invoice:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subscription_id: { type: string, format: uuid }
+        amount_cents: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [pending, paid, failed, refunded] }
+        issued_at: { type: string, format: date }
+        paid_at: { type: string, format: date, nullable: true }
+
+    # ---------- Search ----------
+    SearchResults:
+      type: object
+      properties:
+        concepts:
+          type: array
+          items: { $ref: '#/components/schemas/Concept' }
+        templates:
+          type: array
+          items: { $ref: '#/components/schemas/QuestionTemplate' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    # ---------- Admin ----------
+    AdminUserList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/User' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    ContentVersion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_id: { type: string, format: uuid }
+        version_number: { type: integer }
+        status: { type: string, enum: [active, deprecated] }
+        changelog: { type: string, nullable: true }
+        published_at: { type: string, format: date-time }
+
+    AlgorithmVersion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        version_number: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        parameters: { type: object }
+        changelog: { type: string, nullable: true }
+        is_active: { type: boolean }
+        promoted_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    FeatureFlag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        description: { type: string }
+        targeting_rules: { type: object }
+        default_value: {}
+        is_active: { type: boolean }
+        owner: { type: string }
+
+    CreateFeatureFlagRequest:
+      type: object
+      required: [key, description, owner]
+      properties:
+        key: { type: string }
+        description: { type: string }
+        targeting_rules: { type: object }
+        default_value: {}
+        owner: { type: string }
+        retirement_plan: { type: string }
+
+    UpdateFeatureFlagRequest:
+      type: object
+      properties:
+        description: { type: string }
+        targeting_rules: { type: object }
+        default_value: {}
+        is_active: { type: boolean }
+
+    SystemSetting:
+      type: object
+      properties:
+        key: { type: string }
+        value_type: { type: string, enum: [integer, string, boolean, json] }
+        value: {}
+        description: { type: string, nullable: true }
+
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string, format: uuid, nullable: true }
+        metadata: { type: object }
+        actor_ip: { type: string, nullable: true }
+        outcome: { type: string, enum: [success, failure] }
+        created_at: { type: string, format: date-time }
+
+    AuditLogList:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AuditLog' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+
+    GDPRRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        request_type: { type: string, enum: [access, erasure, portability] }
+        status: { type: string, enum: [pending, processing, completed, rejected] }
+        requested_at: { type: string, format: date-time }
+        due_at: { type: string, format: date }
+        completed_at: { type: string, format: date-time, nullable: true }
+
+    # ---------- Analytics ----------
+    ConceptStatistics:
+      type: object
+      properties:
+        concept_id: { type: string, format: uuid }
+        avg_mastery_score: { type: number, nullable: true }
+        success_rate: { type: number, nullable: true }
+        median_time_to_mastery_days: { type: number, nullable: true }
+        retention_30d: { type: number, nullable: true }
+        learner_count: { type: integer }
+        attempt_count: { type: integer }
+
+    CohortRetention:
+      type: object
+      properties:
+        cohort_size: { type: integer }
+        retention_curves:
+          type: array
+          items:
+            type: object
+            properties:
+              days: { type: integer }
+              retention: { type: number }
+
+    # ---------- Webhooks ----------
+    WebhookDelivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_type: { type: string }
+        payload: { type: object }
+        status: { type: string, enum: [delivered, failed] }
+        delivered_at: { type: string, format: date-time, nullable: true }
+        attempt_count: { type: integer }
+
+    # ---------- Content Packs ----------
+    SubmitContentPackRequest:
+      type: object
+      required: [subject_id, name, artifact_ids]
+      properties:
+        subject_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        artifact_ids:
+          type: object
+          description: Map of artifact type to IDs.
+          properties:
+            concepts: { type: array, items: { type: string, format: uuid } }
+            learning_objectives: { type: array, items: { type: string, format: uuid } }
+            misconceptions: { type: array, items: { type: string, format: uuid } }
+            question_templates: { type: array, items: { type: string, format: uuid } }
