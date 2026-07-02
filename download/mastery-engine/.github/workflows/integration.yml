@@ -1,0 +1,49 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  docker-compose:
+    name: Docker Compose Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy .env.example to .env
+        run: cp .env.example .env
+      - name: Start services
+        run: docker compose up -d --build
+      - name: Wait for backend to be healthy
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/api/v1/health | grep -q "healthy"; then
+              echo "Backend is healthy"
+              exit 0
+            fi
+            echo "Waiting for backend... ($i/30)"
+            sleep 2
+          done
+          echo "Backend failed to start"
+          docker compose logs backend
+          exit 1
+      - name: Test health endpoint
+        run: |
+          RESPONSE=$(curl -s http://localhost:8000/api/v1/health)
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q '"status":"healthy"'
+      - name: Test live endpoint
+        run: |
+          RESPONSE=$(curl -s http://localhost:8000/api/v1/health/live)
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q '"status":"healthy"'
+      - name: Test correlation header
+        run: |
+          HEADERS=$(curl -sI -H "X-Correlation-ID: test-corr-123" http://localhost:8000/api/v1/health)
+          echo "$HEADERS" | grep -qi "X-Correlation-ID: test-corr-123"
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

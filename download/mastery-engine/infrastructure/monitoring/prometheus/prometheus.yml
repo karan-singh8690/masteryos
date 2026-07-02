@@ -1,0 +1,40 @@
+# Prometheus configuration for the Mastery Engine.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Backend metrics
+  - job_name: 'mastery-backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'backend'
+
+  # Frontend metrics (if exposed)
+  - job_name: 'mastery-frontend'
+    static_configs:
+      - targets: ['frontend:3000']
+        labels:
+          service: 'frontend'
+
+  # PostgreSQL metrics (requires postgres_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:9187']
+        labels:
+          service: 'postgres'
+
+  # Redis metrics (requires redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'redis'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
