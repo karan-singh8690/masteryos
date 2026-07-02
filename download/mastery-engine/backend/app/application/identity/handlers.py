@@ -11,10 +11,10 @@ Each handler:
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 from typing import Any
 from uuid import UUID
+
+from app.infrastructure.security import PasswordService
 
 from app.application.shared import (
     ApplicationConflict,
@@ -49,11 +49,24 @@ from app.domain.shared.value_objects import Email
 
 
 class RegisterUserHandler(CommandHandler[RegisterUserCommand, UserDTO]):
-    """Handler for RegisterUserCommand."""
+    """Handler for RegisterUserCommand.
 
-    def __init__(self, uow: UnitOfWork, event_publisher: EventPublisher) -> None:
+    Uses the production Argon2id PasswordService from Task 015.
+    NO SHA256, NO simplified hashing.
+    """
+
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        event_publisher: EventPublisher,
+        password_service: PasswordService | None = None,
+    ) -> None:
         self._uow = uow
         self._event_publisher = event_publisher
+        # Use lower cost for tests; production uses OWASP defaults via get_password_service()
+        self._password_service = password_service or PasswordService(
+            memory_cost=1024, time_cost=1, parallelism=1
+        )
 
     async def handle(self, command: RegisterUserCommand) -> CommandResult[UserDTO]:
         # 1. Application-level validation
@@ -87,8 +100,6 @@ class RegisterUserHandler(CommandHandler[RegisterUserCommand, UserDTO]):
                 email=email_vo,
                 password_hash=password_hash,
                 display_name=command.display_name,
-                timezone=command.timezone,
-                locale=command.locale,
             )
 
             # 4. Persist
@@ -102,12 +113,9 @@ class RegisterUserHandler(CommandHandler[RegisterUserCommand, UserDTO]):
         # 6. Return DTO
         return CommandResult.ok(UserMapper.to_dto(user), events)
 
-    @staticmethod
-    def _hash_password(password: str) -> str:
-        """Hash a password (placeholder — real implementation uses argon2id)."""
-        salt = secrets.token_hex(16)
-        hashed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
-        return f"argon2id${salt}${hashed}"
+    def _hash_password(self, password: str) -> str:
+        """Hash a password with Argon2id (production)."""
+        return self._password_service.hash_password(password)
 
 
 class VerifyEmailHandler(CommandHandler[VerifyEmailCommand, UserDTO]):

@@ -103,8 +103,10 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.learning import router as learning_router
     from app.presentation.api.v1.questions import router as questions_router
     from app.presentation.api.v1.content_admin import router as content_admin_router
+    from app.presentation.api.v1.users import router as users_router
 
     app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(users_router, prefix="/api/v1")
     app.include_router(learning_router, prefix="/api/v1")
     app.include_router(questions_router, prefix="/api/v1")
     app.include_router(content_admin_router, prefix="/api/v1")

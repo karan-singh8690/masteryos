@@ -186,6 +186,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path.startswith("/api/v1/health") or path == "/" or path == "/docs":
             return await call_next(request)
 
+        # Skip rate limiting in testing mode (tests share an IP)
+        from app.shared.config import get_settings
+        try:
+            settings = get_settings()
+            if settings.is_testing:
+                return await call_next(request)
+        except Exception:
+            pass  # If settings fail, fall through to rate limiting
+
         # Get identifier (IP for now; user_id for authenticated in production)
         identifier = request.client.host if request.client else "unknown"
 

@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import Index
 
@@ -93,7 +93,6 @@ class UserCredentialModel(Base):
         {"schema": "identity"},
     )
 
-    from sqlalchemy.dialects.postgresql import UUID as PGUUID
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("identity.users.id", ondelete="CASCADE"), nullable=False
     )
@@ -118,7 +117,6 @@ class SessionModel(Base):
         {"schema": "identity"},
     )
 
-    from sqlalchemy.dialects.postgresql import UUID as PGUUID
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("identity.users.id", ondelete="CASCADE"), nullable=False
     )
@@ -131,3 +129,5 @@ class SessionModel(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoke_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+    user: Mapped[UserModel] = relationship(back_populates="sessions")

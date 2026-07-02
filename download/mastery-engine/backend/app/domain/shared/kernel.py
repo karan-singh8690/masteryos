@@ -208,6 +208,30 @@ class DuplicateEntity(DomainError):
 
 
 # ============================================================
+# Version Number (optimistic concurrency)
+# ============================================================
+
+
+class VersionNumber(int):
+    """Monotonically increasing version number for optimistic concurrency.
+
+    Subclass of int so it can be compared/used as an int but carries
+    a distinct type for clarity. Incremented on each save of an aggregate.
+    """
+
+    __slots__ = ()
+
+    @classmethod
+    def initial(cls) -> "VersionNumber":
+        """Return the initial version (1)."""
+        return cls(1)
+
+    def next_version(self) -> "VersionNumber":
+        """Return the next version (current + 1)."""
+        return VersionNumber(int(self) + 1)
+
+
+# ============================================================
 # Shared Enums
 # ============================================================
 
