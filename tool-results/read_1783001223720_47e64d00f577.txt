@@ -1,0 +1,755 @@
+     1→"""Content context — Concept aggregate root.
+     2→
+     3→A :class:`Concept` is a single, assessable unit of knowledge within a
+     4→:class:`Subject`. It carries its own lifecycle (draft → published →
+     5→deprecated), a set of pedagogical attributes (difficulty, importance),
+     6→and a directed graph of dependencies on sibling Concepts (within the
+     7→same Subject).
+     8→
+     9→The Concept also owns — transitively, via its :class:`LearningObjective`
+    10→children — the :class:`Misconception` entities that describe how
+    11→learners can fail to achieve each objective. The objective and
+    12→misconception children are stored as part of the Concept aggregate
+    13→boundary and loaded/saved through the ConceptRepository.
+    14→
+    15→Lifecycle (state machine)::
+    16→
+    17→        DRAFT ──publish()──► PUBLISHED ──deprecate()──► DEPRECATED
+    18→                              (terminal-ish)
+    19→
+    20→Invariants enforced:
+    21→- A Concept cannot depend on itself (see :class:`ConceptDependency`).
+    22→- A Concept cannot have two dependencies with the same
+    23→  ``(target_concept_id, dependency_type)`` — the pair is the natural
+    24→  key. Use a different type or remove the existing dependency first.
+    25→- A dependency may only target a Concept in the **same Subject**. The
+    26→  caller may pass ``target_subject_id`` to :meth:`add_dependency` for
+    27→  the aggregate to verify this; if it is omitted, the cross-subject
+    28→  check is deferred to the application service (which has access to a
+    29→  ConceptRepository).
+    30→- A Concept cannot be revised once published — to change a published
+    31→  Concept, cut a new :class:`ContentVersion` that supersedes the old
+    32→  one.
+    33→- A Concept cannot be re-published from PUBLISHED or DEPRECATED.
+    34→- A Concept cannot be deprecated from DRAFT (must be PUBLISHED first).
+    35→
+    36→The Concept does **not** enforce acyclicity of the dependency graph
+    37→across multiple Concepts — that requires a global view of all Concepts
+    38→in a Subject and is the responsibility of a domain service
+    39→(typically invoked by the application layer on
+    40→:meth:`Concept.publish` or as a batch job).
+    41→"""
+    42→
+    43→from __future__ import annotations
+    44→
+    45→from datetime import UTC, datetime
+    46→from typing import Any
+    47→
+    48→from app.domain.content.concept_dependency import ConceptDependency
+    49→from app.domain.content.events import (
+    50→    ConceptCreated,
+    51→    ConceptDependencyAdded,
+    52→    ConceptDependencyRemoved,
+    53→    ConceptDeprecated,
+    54→    ConceptPublished,
+    55→    ConceptRevised,
+    56→)
+    57→from app.domain.content.exceptions import (
+    58→    ConceptAlreadyDeprecated,
+    59→    ConceptAlreadyPublished,
+    60→    ConceptDependencyNotFound,
+    61→    ConceptDependencySubjectMismatch,
+    62→    ConceptDuplicateDependency,
+    63→    ConceptSelfDependency,
+    64→)
+    65→from app.domain.content.learning_objective import LearningObjective
+    66→from app.domain.content.misconception import Misconception
+    67→from app.domain.shared.ids import ConceptId, SubjectId
+    68→from app.domain.shared.kernel import (
+    69→    AggregateRoot,
+    70→    ContentStatus,
+    71→    DependencyType,
+    72→    DependencyWeight,
+    73→    Difficulty,
+    74→    Importance,
+    75→    InvalidStateTransition,
+    76→    InvariantViolation,
+    77→)
+    78→
+    79→
+    80→def _utcnow() -> datetime:
+    81→    """Return the current UTC time as a timezone-aware datetime."""
+    82→    return datetime.now(UTC)
+    83→
+    84→
+    85→class Concept(AggregateRoot):
+    86→    """The Concept aggregate root.
+    87→
+    88→    Holds the Concept's identity, pedagogical attributes, lifecycle
+    89→    state, and its directed dependency set. All mutations go through
+    90→    methods on this class, which enforce invariants and emit domain
+    91→    events via :meth:`AggregateRoot._record_event`.
+    92→
+    93→    The public constructor is intended for **reconstitution** from
+    94→    persistence (the repository uses it to rebuild an aggregate from
+    95→    stored state). To create a *new* Concept, use :meth:`Concept.create`.
+    96→
+    97→    The Concept also keeps an in-memory list of its child
+    98→    :class:`LearningObjective` entities (and, transitively, their
+    99→    :class:`Misconception` children). These are loaded and saved
+   100→    alongside the Concept via the ConceptRepository.
+   101→    """
+   102→
+   103→    #: Maximum length of the URL-safe ``slug``.
+   104→    MAX_SLUG_LENGTH: int = 128
+   105→
+   106→    #: Maximum length of the human-readable ``name``.
+   107→    MAX_NAME_LENGTH: int = 200
+   108→
+   109→    #: Maximum length of the ``description``.
+   110→    MAX_DESCRIPTION_LENGTH: int = 4000
+   111→
+   112→    # ------------------------------------------------------------------
+   113→    # Construction
+   114→    # ------------------------------------------------------------------
+   115→
+   116→    def __init__(
+   117→        self,
+   118→        *,
+   119→        id: ConceptId,
+   120→        subject_id: SubjectId,
+   121→        slug: str,
+   122→        name: str,
+   123→        description: str,
+   124→        difficulty: Difficulty,
+   125→        importance: Importance,
+   126→        status: ContentStatus = ContentStatus.DRAFT,
+   127→        dependencies: list[ConceptDependency] | None = None,
+   128→        learning_objectives: list[LearningObjective] | None = None,
+   129→        created_at: datetime | None = None,
+   130→        published_at: datetime | None = None,
+   131→        deprecated_at: datetime | None = None,
+   132→    ) -> None:
+   133→        super().__init__()
+   134→        self._id: ConceptId = id
+   135→        self._subject_id: SubjectId = subject_id
+   136→        self._slug: str = slug
+   137→        self._name: str = name
+   138→        self._description: str = description
+   139→        self._difficulty: Difficulty = difficulty
+   140→        self._importance: Importance = importance
+   141→        self._status: ContentStatus = status
+   142→        self._dependencies: list[ConceptDependency] = list(dependencies) if dependencies else []
+   143→        self._learning_objectives: list[LearningObjective] = (
+   144→            list(learning_objectives) if learning_objectives else []
+   145→        )
+   146→        self._created_at: datetime = created_at or _utcnow()
+   147→        self._published_at: datetime | None = published_at
+   148→        self._deprecated_at: datetime | None = deprecated_at
+   149→        self._validate_invariants()
+   150→        self._validate_dependencies()
+   151→
+   152→    # ------------------------------------------------------------------
+   153→    # Factory
+   154→    # ------------------------------------------------------------------
+   155→
+   156→    @classmethod
+   157→    def create(
+   158→        cls,
+   159→        subject_id: SubjectId,
+   160→        slug: str,
+   161→        name: str,
+   162→        description: str,
+   163→        difficulty: Difficulty,
+   164→        importance: Importance,
+   165→    ) -> Concept:
+   166→        """Create a new Concept in ``draft`` status with no dependencies.
+   167→
+   168→        Args:
+   169→            subject_id: The Subject this Concept belongs to. A Concept
+   170→                is always scoped to exactly one Subject.
+   171→            slug: A URL-safe slug, unique within the Subject.
+   172→            name: A human-readable name (e.g., ``"Quicksort"``).
+   173→            description: A longer description of the Concept's scope.
+   174→            difficulty: The authored difficulty of the Concept
+   175→                (easy / medium / hard).
+   176→            importance: The curriculum importance of the Concept
+   177→                (low / medium / high) — drives graduation gates.
+   178→
+   179→        Returns:
+   180→            A newly created, un-persisted :class:`Concept` in ``draft``
+   181→            status with an empty dependency set. The caller (an
+   182→            application service) must add it to the repository and then
+   183→            call :meth:`collect_events` to publish the recorded events.
+   184→
+   185→        Raises:
+   186→            InvariantViolation: If any field fails validation.
+   187→        """
+   188→        concept_id = ConceptId.generate()
+   189→        concept = cls(
+   190→            id=concept_id,
+   191→            subject_id=subject_id,
+   192→            slug=slug,
+   193→            name=name,
+   194→            description=description,
+   195→            difficulty=difficulty,
+   196→            importance=importance,
+   197→            status=ContentStatus.DRAFT,
+   198→            dependencies=None,
+   199→            learning_objectives=None,
+   200→            created_at=None,
+   201→            published_at=None,
+   202→            deprecated_at=None,
+   203→        )
+   204→        concept._record_event(
+   205→            ConceptCreated(
+   206→                concept_id=concept.id,
+   207→                subject_id=concept.subject_id,
+   208→                slug=concept.slug,
+   209→                name=concept.name,
+   210→                difficulty=concept.difficulty,
+   211→                importance=concept.importance,
+   212→            )
+   213→        )
+   214→        return concept
+   215→
+   216→    # ------------------------------------------------------------------
+   217→    # Properties (read-only views of state)
+   218→    # ------------------------------------------------------------------
+   219→
+   220→    @property
+   221→    def id(self) -> ConceptId:
+   222→        """The Concept's unique identifier."""
+   223→        return self._id
+   224→
+   225→    @property
+   226→    def subject_id(self) -> SubjectId:
+   227→        """The Subject this Concept belongs to."""
+   228→        return self._subject_id
+   229→
+   230→    @property
+   231→    def slug(self) -> str:
+   232→        """A URL-safe slug, unique within the Subject."""
+   233→        return self._slug
+   234→
+   235→    @property
+   236→    def name(self) -> str:
+   237→        """A human-readable name."""
+   238→        return self._name
+   239→
+   240→    @property
+   241→    def description(self) -> str:
+   242→        """A longer description of the Concept's scope."""
+   243→        return self._description
+   244→
+   245→    @property
+   246→    def difficulty(self) -> Difficulty:
+   247→        """The authored difficulty of the Concept."""
+   248→        return self._difficulty
+   249→
+   250→    @property
+   251→    def importance(self) -> Importance:
+   252→        """The curriculum importance of the Concept."""
+   253→        return self._importance
+   254→
+   255→    @property
+   256→    def status(self) -> ContentStatus:
+   257→        """The Concept's current lifecycle status."""
+   258→        return self._status
+   259→
+   260→    @property
+   261→    def dependencies(self) -> list[ConceptDependency]:
+   262→        """A snapshot of the Concept's directed dependencies.
+   263→
+   264→        Returns a copy so callers cannot mutate the aggregate's internal
+   265→        list directly — dependency changes must go through
+   266→        :meth:`add_dependency` and :meth:`remove_dependency`.
+   267→        """
+   268→        return list(self._dependencies)
+   269→
+   270→    @property
+   271→    def learning_objectives(self) -> list[LearningObjective]:
+   272→        """A snapshot of the Concept's child LearningObjectives.
+   273→
+   274→        Returns a copy so callers cannot mutate the aggregate's internal
+   275→        list directly.
+   276→        """
+   277→        return list(self._learning_objectives)
+   278→
+   279→    @property
+   280→    def created_at(self) -> datetime:
+   281→        """When the Concept was created."""
+   282→        return self._created_at
+   283→
+   284→    @property
+   285→    def published_at(self) -> datetime | None:
+   286→        """When the Concept was published, or ``None`` if not yet published."""
+   287→        return self._published_at
+   288→
+   289→    @property
+   290→    def deprecated_at(self) -> datetime | None:
+   291→        """When the Concept was deprecated, or ``None`` if not deprecated."""
+   292→        return self._deprecated_at
+   293→
+   294→    @property
+   295→    def is_draft(self) -> bool:
+   296→        """True if the Concept is in ``draft`` status."""
+   297→        return self._status == ContentStatus.DRAFT
+   298→
+   299→    @property
+   300→    def is_published(self) -> bool:
+   301→        """True if the Concept is in ``published`` status."""
+   302→        return self._status == ContentStatus.PUBLISHED
+   303→
+   304→    @property
+   305→    def is_deprecated(self) -> bool:
+   306→        """True if the Concept is in ``deprecated`` status."""
+   307→        return self._status == ContentStatus.DEPRECATED
+   308→
+   309→    # ------------------------------------------------------------------
+   310→    # Internal helpers
+   311→    # ------------------------------------------------------------------
+   312→
+   313→    def _validate_invariants(self) -> None:
+   314→        """Enforce field-level invariants."""
+   315→        if not isinstance(self._slug, str) or not self._slug.strip():
+   316→            raise InvariantViolation(
+   317→                "Concept",
+   318→                "slug must be a non-empty string",
+   319→            )
+   320→        if len(self._slug) > self.MAX_SLUG_LENGTH:
+   321→            raise InvariantViolation(
+   322→                "Concept",
+   323→                f"slug must be at most {self.MAX_SLUG_LENGTH} characters",
+   324→            )
+   325→        self._slug = self._slug.strip()
+   326→
+   327→        if not isinstance(self._name, str) or not self._name.strip():
+   328→            raise InvariantViolation(
+   329→                "Concept",
+   330→                "name must be a non-empty string",
+   331→            )
+   332→        if len(self._name) > self.MAX_NAME_LENGTH:
+   333→            raise InvariantViolation(
+   334→                "Concept",
+   335→                f"name must be at most {self.MAX_NAME_LENGTH} characters",
+   336→            )
+   337→        self._name = self._name.strip()
+   338→
+   339→        if not isinstance(self._description, str):
+   340→            raise InvariantViolation(
+   341→                "Concept",
+   342→                "description must be a string",
+   343→            )
+   344→        if len(self._description) > self.MAX_DESCRIPTION_LENGTH:
+   345→            raise InvariantViolation(
+   346→                "Concept",
+   347→                f"description must be at most {self.MAX_DESCRIPTION_LENGTH} characters",
+   348→            )
+   349→
+   350→        if not isinstance(self._difficulty, Difficulty):
+   351→            raise InvariantViolation(
+   352→                "Concept",
+   353→                f"difficulty must be a Difficulty enum, got {type(self._difficulty).__name__}",
+   354→            )
+   355→        if not isinstance(self._importance, Importance):
+   356→            raise InvariantViolation(
+   357→                "Concept",
+   358→                f"importance must be an Importance enum, got {type(self._importance).__name__}",
+   359→            )
+   360→
+   361→    def _validate_dependencies(self) -> None:
+   362→        """Re-validate the dependency set on (re)construction.
+   363→
+   364→        Catches corrupt state loaded from persistence — e.g., a
+   365→        self-dependency that slipped past an older code path, or a
+   366→        duplicate ``(target, type)`` pair caused by a botched migration.
+   367→        """
+   368→        seen: set[tuple[Any, Any]] = set()
+   369→        for dep in self._dependencies:
+   370→            # ``ConceptDependency.__post_init__`` already rejects self-deps at
+   371→            # construction time, but a reconstituted aggregate bypasses that.
+   372→            if dep.source_concept_id != self._id:
+   373→                raise InvariantViolation(
+   374→                    "Concept",
+   375→                    f"dependency {dep!r} has source_concept_id != this Concept's id",
+   376→                )
+   377→            key = (dep.target_concept_id, dep.dependency_type)
+   378→            if key in seen:
+   379→                raise InvariantViolation(
+   380→                    "Concept",
+   381→                    f"duplicate dependency on {dep.target_concept_id}/{dep.dependency_type}",
+   382→                )
+   383→            seen.add(key)
+   384→
+   385→    def _assert_status(self, expected: ContentStatus, action: str) -> None:
+   386→        """Raise :class:`InvalidStateTransition` unless in ``expected`` status."""
+   387→        if self._status != expected:
+   388→            raise InvalidStateTransition(
+   389→                entity="Concept",
+   390→                current_state=self._status.value,
+   391→                attempted_action=action,
+   392→            )
+   393→
+   394→    def _find_dependency(
+   395→        self,
+   396→        target_concept_id: ConceptId,
+   397→        dependency_type: DependencyType,
+   398→    ) -> ConceptDependency | None:
+   399→        """Return the matching dependency, or ``None`` if not present."""
+   400→        for dep in self._dependencies:
+   401→            if dep.matches(target_concept_id=target_concept_id, dependency_type=dependency_type):
+   402→                return dep
+   403→        return None
+   404→
+   405→    # ------------------------------------------------------------------
+   406→    # Dependency management
+   407→    # ------------------------------------------------------------------
+   408→
+   409→    def add_dependency(
+   410→        self,
+   411→        target_concept_id: ConceptId,
+   412→        dependency_type: DependencyType,
+   413→        weight: DependencyWeight,
+   414→        *,
+   415→        target_subject_id: SubjectId | None = None,
+   416→    ) -> ConceptDependency:
+   417→        """Add a directed dependency from this Concept to ``target_concept_id``.
+   418→
+   419→        Args:
+   420→            target_concept_id: The Concept this Concept depends on.
+   421→            dependency_type: The semantic type of the dependency
+   422→                (prerequisite, related, reinforces).
+   423→            weight: The strength of the dependency (weak, strong).
+   424→            target_subject_id: Optional — the Subject of the target
+   425→                Concept. When provided, the aggregate verifies that the
+   426→                target is in the same Subject as this Concept and
+   427→                raises :class:`ConceptDependencySubjectMismatch`
+   428→                otherwise. When omitted, the cross-subject check is
+   429→                deferred to the application service (which has access
+   430→                to a ConceptRepository).
+   431→
+   432→        Returns:
+   433→            The newly-added :class:`ConceptDependency` (also recorded
+   434→            in ``self.dependencies``).
+   435→
+   436→        Raises:
+   437→            ConceptSelfDependency: If ``target_concept_id`` is this
+   438→                Concept's own id.
+   439→            ConceptDuplicateDependency: If a dependency with the same
+   440→                ``(target_concept_id, dependency_type)`` already exists.
+   441→            ConceptDependencySubjectMismatch: If ``target_subject_id``
+   442→                is provided and differs from this Concept's Subject.
+   443→            InvalidStateTransition: If the Concept is deprecated
+   444→                (dependencies cannot be added to a terminal Concept).
+   445→            InvariantViolation: If the underlying
+   446→                :class:`ConceptDependency` rejects the pair (e.g., a
+   447→                self-dependency caught at VO construction).
+   448→        """
+   449→        if self._status == ContentStatus.DEPRECATED:
+   450→            raise InvalidStateTransition(
+   451→                entity="Concept",
+   452→                current_state=self._status.value,
+   453→                attempted_action="add_dependency",
+   454→            )
+   455→
+   456→        if target_concept_id == self._id:
+   457→            raise ConceptSelfDependency(self._id)
+   458→
+   459→        if self._find_dependency(target_concept_id, dependency_type) is not None:
+   460→            raise ConceptDuplicateDependency(self._id, target_concept_id, dependency_type)
+   461→
+   462→        if target_subject_id is not None and target_subject_id != self._subject_id:
+   463→            raise ConceptDependencySubjectMismatch(
+   464→                concept_id=self._id,
+   465→                concept_subject_id=self._subject_id,
+   466→                target_concept_id=target_concept_id,
+   467→                target_subject_id=target_subject_id,
+   468→            )
+   469→
+   470→        dependency = ConceptDependency(
+   471→            source_concept_id=self._id,
+   472→            target_concept_id=target_concept_id,
+   473→            dependency_type=dependency_type,
+   474→            weight=weight,
+   475→        )
+   476→        self._dependencies.append(dependency)
+   477→        self._record_event(
+   478→            ConceptDependencyAdded(
+   479→                concept_id=self._id,
+   480→                subject_id=self._subject_id,
+   481→                target_concept_id=target_concept_id,
+   482→                dependency_type=dependency_type,
+   483→                weight=weight,
+   484→            )
+   485→        )
+   486→        return dependency
+   487→
+   488→    def remove_dependency(
+   489→        self,
+   490→        target_concept_id: ConceptId,
+   491→        dependency_type: DependencyType,
+   492→    ) -> None:
+   493→        """Remove the dependency on ``target_concept_id`` of ``dependency_type``.
+   494→
+   495→        The ``(target_concept_id, dependency_type)`` pair is the natural
+   496→        key — if multiple weights were somehow allowed, this method
+   497→        would still remove a single deterministic entry.
+   498→
+   499→        Args:
+   500→            target_concept_id: The Concept the dependency points to.
+   501→            dependency_type: The semantic type of the dependency.
+   502→
+   503→        Raises:
+   504→            ConceptDependencyNotFound: If no such dependency exists.
+   505→            InvalidStateTransition: If the Concept is deprecated.
+   506→        """
+   507→        if self._status == ContentStatus.DEPRECATED:
+   508→            raise InvalidStateTransition(
+   509→                entity="Concept",
+   510→                current_state=self._status.value,
+   511→                attempted_action="remove_dependency",
+   512→            )
+   513→
+   514→        match = self._find_dependency(target_concept_id, dependency_type)
+   515→        if match is None:
+   516→            raise ConceptDependencyNotFound(self._id, target_concept_id, dependency_type)
+   517→
+   518→        self._dependencies.remove(match)
+   519→        self._record_event(
+   520→            ConceptDependencyRemoved(
+   521→                concept_id=self._id,
+   522→                subject_id=self._subject_id,
+   523→                target_concept_id=target_concept_id,
+   524→                dependency_type=dependency_type,
+   525→            )
+   526→        )
+   527→
+   528→    # ------------------------------------------------------------------
+   529→    # Revision
+   530→    # ------------------------------------------------------------------
+   531→
+   532→    def revise(
+   533→        self,
+   534→        name: str,
+   535→        description: str,
+   536→        difficulty: Difficulty,
+   537→        importance: Importance,
+   538→    ) -> dict[str, Any]:
+   539→        """Revise the Concept's pedagogical attributes.
+   540→
+   541→        Only applies to a ``draft`` Concept. Revising a published Concept
+   542→        requires a new :class:`ContentVersion` — see the ContentVersion
+   543→        aggregate.
+   544→
+   545→        Args:
+   546→            name: New name (validated).
+   547→            description: New description (validated).
+   548→            difficulty: New difficulty.
+   549→            importance: New importance.
+   550→
+   551→        Returns:
+   552→            A mapping of ``field_name → new_value`` for any field that
+   553→            actually changed. Callers may use this to emit a more
+   554→            detailed event or audit entry.
+   555→
+   556→        Raises:
+   557→            InvalidStateTransition: If the Concept is not in ``draft``
+   558→                status.
+   559→            InvariantViolation: If any new value fails validation.
+   560→        """
+   561→        self._assert_status(ContentStatus.DRAFT, "revise")
+   562→
+   563→        changed: dict[str, Any] = {}
+   564→        if name.strip() != self._name:
+   565→            self._name = name
+   566→            changed["name"] = self._name
+   567→        if description != self._description:
+   568→            self._description = description
+   569→            changed["description"] = self._description
+   570→        if difficulty != self._difficulty:
+   571→            self._difficulty = difficulty
+   572→            changed["difficulty"] = self._difficulty
+   573→        if importance != self._importance:
+   574→            self._importance = importance
+   575→            changed["importance"] = self._importance
+   576→
+   577→        # Re-validate after applying changes — invariant violations on
+   578→        # the new values will surface here before the caller commits.
+   579→        self._validate_invariants()
+   580→
+   581→        if changed:
+   582→            self._record_event(
+   583→                ConceptRevised(
+   584→                    concept_id=self._id,
+   585→                    subject_id=self._subject_id,
+   586→                    changed_fields=changed,
+   587→                )
+   588→            )
+   589→        return changed
+   590→
+   591→    # ------------------------------------------------------------------
+   592→    # Child entities: learning objectives & misconceptions
+   593→    # ------------------------------------------------------------------
+   594→
+   595→    def add_learning_objective(self, objective: LearningObjective) -> None:
+   596→        """Adopt a :class:`LearningObjective` as a child of this Concept.
+   597→
+   598→        The objective must already reference this Concept's id (set at
+   599→        :meth:`LearningObjective.create` time). The Concept records the
+   600→        objective's creation event on its own event stream so
+   601→        subscribers see a single, consistent event stream per aggregate
+   602→        transaction.
+   603→
+   604→        Args:
+   605→            objective: The LearningObjective to adopt. Its
+   606→                ``concept_id`` must equal this Concept's id.
+   607→
+   608→        Raises:
+   609→            InvalidStateTransition: If the Concept is deprecated.
+   610→            InvariantViolation: If the objective's ``concept_id``
+   611→                does not match this Concept's id.
+   612→        """
+   613→        if self._status == ContentStatus.DEPRECATED:
+   614→            raise InvalidStateTransition(
+   615→                entity="Concept",
+   616→                current_state=self._status.value,
+   617→                attempted_action="add_learning_objective",
+   618→            )
+   619→        if objective.concept_id != self._id:
+   620→            raise InvariantViolation(
+   621→                "Concept",
+   622→                f"LearningObjective {objective.id} belongs to concept "
+   623→                f"{objective.concept_id}, not {self._id}",
+   624→            )
+   625→        self._learning_objectives.append(objective)
+   626→        evt = objective.pull_creation_event()
+   627→        if evt is not None:
+   628→            self._record_event(evt)
+   629→
+   630→    def add_misconception(self, misconception: Misconception) -> None:
+   631→        """Adopt a :class:`Misconception` for a child LearningObjective.
+   632→
+   633→        The misconception must reference a LearningObjective that is
+   634→        already a child of this Concept. The Concept records the
+   635→        misconception's creation event on its own event stream.
+   636→
+   637→        Args:
+   638→            misconception: The Misconception to adopt.
+   639→
+   640→        Raises:
+   641→            InvalidStateTransition: If the Concept is deprecated.
+   642→            InvariantViolation: If the misconception's parent
+   643→                LearningObjective is not a child of this Concept.
+   644→        """
+   645→        if self._status == ContentStatus.DEPRECATED:
+   646→            raise InvalidStateTransition(
+   647→                entity="Concept",
+   648→                current_state=self._status.value,
+   649→                attempted_action="add_misconception",
+   650→            )
+   651→        parent_ids = {lo.id for lo in self._learning_objectives}
+   652→        if misconception.learning_objective_id not in parent_ids:
+   653→            raise InvariantViolation(
+   654→                "Concept",
+   655→                f"Misconception {misconception.id} references learning objective "
+   656→                f"{misconception.learning_objective_id}, which is not a child of "
+   657→                f"concept {self._id}",
+   658→            )
+   659→        # Store the misconception on its parent LearningObjective (the
+   660→        # LearningObjective entity owns its misconceptions in this
+   661→        # design). For now, we just record the creation event.
+   662→        evt = misconception.pull_creation_event()
+   663→        if evt is not None:
+   664→            self._record_event(evt)
+   665→
+   666→    def get_learning_objective(self, objective_id: Any) -> LearningObjective | None:
+   667→        """Return the child LearningObjective with the given id, or ``None``."""
+   668→        for lo in self._learning_objectives:
+   669→            if lo.id == objective_id:
+   670→                return lo
+   671→        return None
+   672→
+   673→    # ------------------------------------------------------------------
+   674→    # Lifecycle: publish / deprecate
+   675→    # ------------------------------------------------------------------
+   676→
+   677→    def publish(self, now: datetime | None = None) -> None:
+   678→        """Transition the Concept from ``draft`` to ``published``.
+   679→
+   680→        Pre-state: ``draft``.
+   681→        Post-state: ``published`` with ``published_at`` set.
+   682→
+   683→        Note:
+   684→            This method does **not** check that the dependency graph is
+   685→            acyclic across the whole Subject. That is a domain-service
+   686→            responsibility — see the module docstring.
+   687→
+   688→        Raises:
+   689→            ConceptAlreadyPublished: If the Concept is already
+   690→                ``published``.
+   691→            InvalidStateTransition: If the Concept is ``deprecated``.
+   692→        """
+   693→        if self._status == ContentStatus.PUBLISHED:
+   694→            raise ConceptAlreadyPublished(self._id)
+   695→        if self._status == ContentStatus.DEPRECATED:
+   696→            raise InvalidStateTransition(
+   697→                entity="Concept",
+   698→                current_state=self._status.value,
+   699→                attempted_action="publish",
+   700→            )
+   701→        self._assert_status(ContentStatus.DRAFT, "publish")
+   702→
+   703→        timestamp = now or _utcnow()
+   704→        self._status = ContentStatus.PUBLISHED
+   705→        self._published_at = timestamp
+   706→        self._record_event(
+   707→            ConceptPublished(
+   708→                concept_id=self._id,
+   709→                subject_id=self._subject_id,
+   710→            )
+   711→        )
+   712→
+   713→    def deprecate(self, now: datetime | None = None) -> None:
+   714→        """Transition the Concept from ``published`` to ``deprecated``.
+   715→
+   716→        Pre-state: ``published``.
+   717→        Post-state: ``deprecated`` with ``deprecated_at`` set.
+   718→
+   719→        Deprecation hides the Concept from new learners but keeps it in
+   720→        the dependency graph for reference. It is one-way.
+   721→
+   722→        Raises:
+   723→            ConceptAlreadyDeprecated: If the Concept is already
+   724→                ``deprecated``.
+   725→            InvalidStateTransition: If the Concept is in ``draft``
+   726→                (cannot deprecate something never published).
+   727→        """
+   728→        if self._status == ContentStatus.DEPRECATED:
+   729→            raise ConceptAlreadyDeprecated(self._id)
+   730→        self._assert_status(ContentStatus.PUBLISHED, "deprecate")
+   731→
+   732→        timestamp = now or _utcnow()
+   733→        self._status = ContentStatus.DEPRECATED
+   734→        self._deprecated_at = timestamp
+   735→        self._record_event(
+   736→            ConceptDeprecated(
+   737→                concept_id=self._id,
+   738→                subject_id=self._subject_id,
+   739→            )
+   740→        )
+   741→
+   742→    # ------------------------------------------------------------------
+   743→    # Repr
+   744→    # ------------------------------------------------------------------
+   745→
+   746→    def __repr__(self) -> str:
+   747→        return (
+   748→            f"Concept(id={self._id}, subject_id={self._subject_id}, "
+   749→            f"slug={self._slug!r}, status={self._status.value!r}, "
+   750→            f"dependencies={len(self._dependencies)})"
+   751→        )
+   752→
+   753→
+   754→__all__ = ["Concept"]
+   755→

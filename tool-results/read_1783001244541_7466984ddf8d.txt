@@ -1,0 +1,751 @@
+     1→"""Content context — ContentPack aggregate root.
+     2→
+     3→A :class:`ContentPack` is a curated bundle of content artifacts (Concept
+     4→revisions, new QuestionTemplates, new TemplateVersions, new
+     5→LearningObjectives/Misconceptions) staged for atomic publication as a
+     6→single :class:`ContentVersion`. It is the unit of editorial review: an
+     7→author assembles a pack, submits it for multi-stage review, and once
+     8→every stage has approved it the pack is published — atomically binding
+     9→its artifacts to a new (or existing) ContentVersion and marking that
+    10→version as the active one for the Subject.
+    11→
+    12→Why packs exist:
+    13→
+    14→Without a review gate, every individual artifact edit would either (a)
+    15→go live immediately, risking learner-visible mistakes, or (b) require
+    16→a separate out-of-band review process with no audit trail. ContentPack
+    17→makes the review first-class: each pack carries its own state machine,
+    18→records every reviewer decision as a domain event, and is the single
+    19→chokepoint through which content reaches learners.
+    20→
+    21→Lifecycle (state machine)::
+    22→
+    23→            submit_for_review()         approve(stage) (per stage)
+    24→        DRAFT ──────────────────► IN_REVIEW ───────────────────────► (all stages approved)
+    25→         ▲ ▲                         │ │                                  │
+    26→         │ │                         │ │                                  │ publish(content_version_id)
+    27→         │ │   request_changes()     │ │ reject(reviewer_id, reason)      │
+    28→         │ └─────────────────────────┘ ▼                                  ▼
+    29→         │                          REJECTED                            PUBLISHED
+    30→         │                          (terminal)                          (terminal)
+    31→         │
+    32→         └── (after rework, author submits again)
+    33→
+    34→State semantics:
+    35→
+    36→- ``draft`` — the author is still assembling the pack. Artifacts may be
+    37→  added/removed freely. No review decisions are recorded.
+    38→- ``in_review`` — the pack has been submitted and is being evaluated by
+    39→  reviewers. Each :class:`ReviewStage` (peer, editorial, QA pilot) must
+    40→  approve via :meth:`approve` before :meth:`publish` is allowed.
+    41→- ``published`` — terminal. The pack has been bound to a
+    42→  :class:`ContentVersion` and its artifacts are live.
+    43→- ``rejected`` — terminal. A reviewer has rejected the pack outright.
+    44→  The author must create a new ContentPack with the requested
+    45→  corrections; rejected packs cannot be re-opened.
+    46→
+    47→Invariants enforced:
+    48→- A pack can only be submitted from ``draft``.
+    49→- ``approve``, ``request_changes``, and ``reject`` only apply to a pack
+    50→  in ``in_review``.
+    51→- A given review stage can only be approved once per submission cycle.
+    52→  After :meth:`request_changes` returns the pack to ``draft``, all
+    53→  stage approvals are cleared (a fresh review cycle is required).
+    54→- :meth:`publish` requires every required :class:`ReviewStage` to have
+    55→  approved. The required stages are the three enumerated in
+    56→  :class:`ReviewStage` (peer, editorial, QA pilot) by default; this is
+    57→  overridable via the ``required_stages`` argument to
+    58→  :meth:`__init__` for tenants with simpler workflows.
+    59→- :meth:`publish` requires a ``content_version_id`` to bind the pack
+    60→  to. The application service is responsible for creating or selecting
+    61→  the :class:`ContentVersion` and passing its id.
+    62→- ``published`` and ``rejected`` are terminal — no further transitions
+    63→  are allowed.
+    64→"""
+    65→
+    66→from __future__ import annotations
+    67→
+    68→from datetime import UTC, datetime
+    69→from typing import Any
+    70→
+    71→from app.domain.content.events import (
+    72→    ContentPackApproved,
+    73→    ContentPackChangesRequested,
+    74→    ContentPackCreated,
+    75→    ContentPackPublished,
+    76→    ContentPackRejected,
+    77→    ContentPackSubmittedForReview,
+    78→)
+    79→from app.domain.content.exceptions import (
+    80→    ContentPackAlreadyPublished,
+    81→    ContentPackAlreadyRejected,
+    82→    ContentPackAlreadySubmitted,
+    83→    ContentPackNotInReview,
+    84→    ContentPackReviewIncomplete,
+    85→    ContentPackStageAlreadyApproved,
+    86→)
+    87→from app.domain.shared.ids import ContentPackId, ContentVersionId, SubjectId, UserId
+    88→from app.domain.shared.kernel import (
+    89→    AggregateRoot,
+    90→    ContentStatus,
+    91→    InvalidStateTransition,
+    92→    InvariantViolation,
+    93→    ReviewStage,
+    94→)
+    95→
+    96→
+    97→def _utcnow() -> datetime:
+    98→    """Return the current UTC time as a timezone-aware datetime."""
+    99→    return datetime.now(UTC)
+   100→
+   101→
+   102→#: The default set of review stages that must approve before a pack can
+   103→#: be published. Tenants with simpler workflows may override this via
+   104→#: the ``required_stages`` argument to :meth:`ContentPack.__init__`.
+   105→DEFAULT_REQUIRED_STAGES: frozenset[ReviewStage] = frozenset(
+   106→    {
+   107→        ReviewStage.PEER_REVIEW,
+   108→        ReviewStage.EDITORIAL_REVIEW,
+   109→        ReviewStage.QA_PILOT,
+   110→    }
+   111→)
+   112→
+   113→
+   114→class ContentPack(AggregateRoot):
+   115→    """The ContentPack aggregate root.
+   116→
+   117→    Holds the pack's identity, lifecycle state, the set of artifact
+   118→    references it bundles (``artifact_ids``), the set of review stages
+   119→    that have approved it, and a log of change-request notes from
+   120→    reviewers. All mutations go through methods on this class, which
+   121→    enforce invariants and emit domain events via
+   122→    :meth:`AggregateRoot._record_event`.
+   123→
+   124→    The public constructor is intended for **reconstitution** from
+   125→    persistence (the repository uses it to rebuild an aggregate from
+   126→    stored state). To create a *new* pack, use
+   127→    :meth:`ContentPack.create`.
+   128→
+   129→    The ``artifact_ids`` dict maps an artifact-kind string (e.g.,
+   130→    ``"concept"``, ``"question_template"``, ``"template_version"``) to
+   131→    a list of typed-id values. The domain does not validate the
+   132→    contents of these lists — the application service is responsible
+   133→    for ensuring that every referenced artifact actually exists in the
+   134→    same Subject before publication.
+   135→    """
+   136→
+   137→    #: Maximum length of the human-readable ``name``.
+   138→    MAX_NAME_LENGTH: int = 200
+   139→
+   140→    #: Maximum length of the ``description``.
+   141→    MAX_DESCRIPTION_LENGTH: int = 4000
+   142→
+   143→    #: Maximum length of a reviewer's ``notes`` (on request_changes).
+   144→    MAX_NOTES_LENGTH: int = 4000
+   145→
+   146→    #: Maximum length of a rejection ``reason``.
+   147→    MAX_REASON_LENGTH: int = 4000
+   148→
+   149→    # ------------------------------------------------------------------
+   150→    # Construction
+   151→    # ------------------------------------------------------------------
+   152→
+   153→    def __init__(
+   154→        self,
+   155→        *,
+   156→        id: ContentPackId,
+   157→        subject_id: SubjectId,
+   158→        author_id: UserId,
+   159→        name: str,
+   160→        description: str,
+   161→        status: ContentStatus = ContentStatus.DRAFT,
+   162→        content_version_id: ContentVersionId | None = None,
+   163→        artifact_ids: dict[str, list[Any]] | None = None,
+   164→        approved_stages: list[ReviewStage] | None = None,
+   165→        change_request_notes: list[dict[str, Any]] | None = None,
+   166→        published_at: datetime | None = None,
+   167→        created_at: datetime | None = None,
+   168→        required_stages: frozenset[ReviewStage] | None = None,
+   169→    ) -> None:
+   170→        super().__init__()
+   171→        self._id: ContentPackId = id
+   172→        self._subject_id: SubjectId = subject_id
+   173→        self._author_id: UserId = author_id
+   174→        self._name: str = name
+   175→        self._description: str = description
+   176→        self._status: ContentStatus = status
+   177→        self._content_version_id: ContentVersionId | None = content_version_id
+   178→        self._artifact_ids: dict[str, list[Any]] = (
+   179→            {k: list(v) for k, v in artifact_ids.items()} if artifact_ids else {}
+   180→        )
+   181→        self._approved_stages: set[ReviewStage] = set(approved_stages) if approved_stages else set()
+   182→        self._change_request_notes: list[dict[str, Any]] = (
+   183→            list(change_request_notes) if change_request_notes else []
+   184→        )
+   185→        self._published_at: datetime | None = published_at
+   186→        self._created_at: datetime = created_at or _utcnow()
+   187→        self._required_stages: frozenset[ReviewStage] = (
+   188→            required_stages if required_stages is not None else DEFAULT_REQUIRED_STAGES
+   189→        )
+   190→        self._validate_invariants()
+   191→
+   192→    # ------------------------------------------------------------------
+   193→    # Factory
+   194→    # ------------------------------------------------------------------
+   195→
+   196→    @classmethod
+   197→    def create(
+   198→        cls,
+   199→        subject_id: SubjectId,
+   200→        author_id: UserId,
+   201→        name: str,
+   202→        description: str,
+   203→    ) -> ContentPack:
+   204→        """Create a new ContentPack in ``draft`` status.
+   205→
+   206→        The new pack has an empty artifact set and no review decisions.
+   207→        The author attaches artifacts via :meth:`add_artifact` and then
+   208→        submits via :meth:`submit_for_review`.
+   209→
+   210→        Args:
+   211→            subject_id: The Subject this pack stages content for.
+   212→            author_id: The user assembling the pack. Recorded on every
+   213→                event for audit.
+   214→            name: A human-readable name (e.g.,
+   215→                ``"Algorithms v2 — add graph theory"``).
+   216→            description: A longer description of the pack's scope.
+   217→
+   218→        Returns:
+   219→            A newly created, un-persisted :class:`ContentPack` in
+   220→            ``draft`` status. The caller must add it to the repository
+   221→            and then call :meth:`collect_events` to publish the
+   222→            recorded events.
+   223→
+   224→        Raises:
+   225→            InvariantViolation: If any field fails validation.
+   226→        """
+   227→        pack_id = ContentPackId.generate()
+   228→        pack = cls(
+   229→            id=pack_id,
+   230→            subject_id=subject_id,
+   231→            author_id=author_id,
+   232→            name=name,
+   233→            description=description,
+   234→            status=ContentStatus.DRAFT,
+   235→            content_version_id=None,
+   236→            artifact_ids=None,
+   237→            approved_stages=None,
+   238→            change_request_notes=None,
+   239→            published_at=None,
+   240→            created_at=None,
+   241→            required_stages=None,
+   242→        )
+   243→        pack._record_event(
+   244→            ContentPackCreated(
+   245→                content_pack_id=pack.id,
+   246→                subject_id=pack.subject_id,
+   247→                author_id=pack.author_id,
+   248→                name=pack.name,
+   249→            )
+   250→        )
+   251→        return pack
+   252→
+   253→    # ------------------------------------------------------------------
+   254→    # Properties (read-only views of state)
+   255→    # ------------------------------------------------------------------
+   256→
+   257→    @property
+   258→    def id(self) -> ContentPackId:
+   259→        """The pack's unique identifier."""
+   260→        return self._id
+   261→
+   262→    @property
+   263→    def subject_id(self) -> SubjectId:
+   264→        """The Subject this pack stages content for."""
+   265→        return self._subject_id
+   266→
+   267→    @property
+   268→    def author_id(self) -> UserId:
+   269→        """The user who assembled the pack."""
+   270→        return self._author_id
+   271→
+   272→    @property
+   273→    def name(self) -> str:
+   274→        """A human-readable name."""
+   275→        return self._name
+   276→
+   277→    @property
+   278→    def description(self) -> str:
+   279→        """A longer description of the pack's scope."""
+   280→        return self._description
+   281→
+   282→    @property
+   283→    def status(self) -> ContentStatus:
+   284→        """The pack's current lifecycle status."""
+   285→        return self._status
+   286→
+   287→    @property
+   288→    def content_version_id(self) -> ContentVersionId | None:
+   289→        """The ContentVersion this pack was bound to on publication.
+   290→
+   291→        ``None`` until :meth:`publish` is called.
+   292→        """
+   293→        return self._content_version_id
+   294→
+   295→    @property
+   296→    def artifact_ids(self) -> dict[str, list[Any]]:
+   297→        """A snapshot of the pack's artifact references.
+   298→
+   299→        Returns a deep copy so callers cannot mutate the aggregate's
+   300→        internal dict directly — artifact changes must go through
+   301→        :meth:`add_artifact` and :meth:`remove_artifact`.
+   302→        """
+   303→        return {k: list(v) for k, v in self._artifact_ids.items()}
+   304→
+   305→    @property
+   306→    def approved_stages(self) -> frozenset[ReviewStage]:
+   307→        """The set of review stages that have approved this pack."""
+   308→        return frozenset(self._approved_stages)
+   309→
+   310→    @property
+   311→    def change_request_notes(self) -> list[dict[str, Any]]:
+   312→        """A snapshot of the change-request notes left by reviewers.
+   313→
+   314→        Each entry is a dict ``{"reviewer_id": ..., "notes": ..., "at": ...}``.
+   315→        """
+   316→        return [dict(n) for n in self._change_request_notes]
+   317→
+   318→    @property
+   319→    def published_at(self) -> datetime | None:
+   320→        """When the pack was published, or ``None`` if not yet published."""
+   321→        return self._published_at
+   322→
+   323→    @property
+   324→    def created_at(self) -> datetime:
+   325→        """When the pack was created."""
+   326→        return self._created_at
+   327→
+   328→    @property
+   329→    def required_stages(self) -> frozenset[ReviewStage]:
+   330→        """The set of review stages that must approve before :meth:`publish`."""
+   331→        return self._required_stages
+   332→
+   333→    @property
+   334→    def is_draft(self) -> bool:
+   335→        """True if the pack is in ``draft`` status."""
+   336→        return self._status == ContentStatus.DRAFT
+   337→
+   338→    @property
+   339→    def is_in_review(self) -> bool:
+   340→        """True if the pack is in ``in_review`` status."""
+   341→        return self._status == ContentStatus.IN_REVIEW
+   342→
+   343→    @property
+   344→    def is_published(self) -> bool:
+   345→        """True if the pack is in ``published`` status."""
+   346→        return self._status == ContentStatus.PUBLISHED
+   347→
+   348→    @property
+   349→    def is_rejected(self) -> bool:
+   350→        """True if the pack is in ``rejected`` status."""
+   351→        return self._status == ContentStatus.REJECTED
+   352→
+   353→    @property
+   354→    def missing_stages(self) -> list[ReviewStage]:
+   355→        """The review stages that have not yet approved this pack.
+   356→
+   357→        Empty iff :meth:`is_review_complete` is ``True``.
+   358→        """
+   359→        return sorted(self._required_stages - self._approved_stages, key=lambda s: s.value)
+   360→
+   361→    @property
+   362→    def is_review_complete(self) -> bool:
+   363→        """True iff every required review stage has approved this pack."""
+   364→        return self._required_stages.issubset(self._approved_stages)
+   365→
+   366→    # ------------------------------------------------------------------
+   367→    # Internal helpers
+   368→    # ------------------------------------------------------------------
+   369→
+   370→    def _validate_invariants(self) -> None:
+   371→        """Enforce field-level invariants."""
+   372→        if not isinstance(self._name, str) or not self._name.strip():
+   373→            raise InvariantViolation(
+   374→                "ContentPack",
+   375→                "name must be a non-empty string",
+   376→            )
+   377→        if len(self._name) > self.MAX_NAME_LENGTH:
+   378→            raise InvariantViolation(
+   379→                "ContentPack",
+   380→                f"name must be at most {self.MAX_NAME_LENGTH} characters",
+   381→            )
+   382→        self._name = self._name.strip()
+   383→
+   384→        if not isinstance(self._description, str):
+   385→            raise InvariantViolation(
+   386→                "ContentPack",
+   387→                "description must be a string",
+   388→            )
+   389→        if len(self._description) > self.MAX_DESCRIPTION_LENGTH:
+   390→            raise InvariantViolation(
+   391→                "ContentPack",
+   392→                f"description must be at most {self.MAX_DESCRIPTION_LENGTH} characters",
+   393→            )
+   394→
+   395→        if not isinstance(self._artifact_ids, dict):
+   396→            raise InvariantViolation(
+   397→                "ContentPack",
+   398→                "artifact_ids must be a dict",
+   399→            )
+   400→        for k, v in self._artifact_ids.items():
+   401→            if not isinstance(k, str) or not k:
+   402→                raise InvariantViolation(
+   403→                    "ContentPack",
+   404→                    f"artifact_ids key must be a non-empty string, got {k!r}",
+   405→                )
+   406→            if not isinstance(v, list):
+   407→                raise InvariantViolation(
+   408→                    "ContentPack",
+   409→                    f"artifact_ids[{k!r}] must be a list, got {type(v).__name__}",
+   410→                )
+   411→
+   412→        if not isinstance(self._required_stages, (set, frozenset)) or not self._required_stages:
+   413→            raise InvariantViolation(
+   414→                "ContentPack",
+   415→                "required_stages must be a non-empty set of ReviewStage",
+   416→            )
+   417→        for s in self._required_stages:
+   418→            if not isinstance(s, ReviewStage):
+   419→                raise InvariantViolation(
+   420→                    "ContentPack",
+   421→                    f"required_stages contains non-ReviewStage value: {s!r}",
+   422→                )
+   423→
+   424→        # Restrict the status to the values that make sense for a ContentPack.
+   425→        allowed = {
+   426→            ContentStatus.DRAFT,
+   427→            ContentStatus.IN_REVIEW,
+   428→            ContentStatus.PUBLISHED,
+   429→            ContentStatus.REJECTED,
+   430→        }
+   431→        if self._status not in allowed:
+   432→            raise InvariantViolation(
+   433→                "ContentPack",
+   434→                f"status must be one of {[s.value for s in allowed]}, got {self._status.value!r}",
+   435→            )
+   436→
+   437→    def _assert_status(self, expected: ContentStatus, action: str) -> None:
+   438→        """Raise :class:`InvalidStateTransition` unless in ``expected`` status."""
+   439→        if self._status != expected:
+   440→            raise InvalidStateTransition(
+   441→                entity="ContentPack",
+   442→                current_state=self._status.value,
+   443→                attempted_action=action,
+   444→            )
+   445→
+   446→    def _assert_not_terminal(self) -> None:
+   447→        """Refuse any action on a terminal-state pack (published or rejected).
+   448→
+   449→        Called by :meth:`submit_for_review`, :meth:`approve`,
+   450→        :meth:`request_changes`, :meth:`reject`, and :meth:`publish` to
+   451→        short-circuit any operation on a pack that has already reached
+   452→        a terminal state.
+   453→        """
+   454→        if self._status == ContentStatus.PUBLISHED:
+   455→            raise ContentPackAlreadyPublished(self._id)
+   456→        if self._status == ContentStatus.REJECTED:
+   457→            raise ContentPackAlreadyRejected(self._id)
+   458→
+   459→    # ------------------------------------------------------------------
+   460→    # Artifact management (only allowed in draft)
+   461→    # ------------------------------------------------------------------
+   462→
+   463→    def add_artifact(self, kind: str, artifact_id: Any) -> None:
+   464→        """Add an artifact reference to the pack.
+   465→
+   466→        Args:
+   467→            kind: The artifact kind (e.g., ``"concept"``,
+   468→                ``"question_template"``, ``"template_version"``).
+   469→            artifact_id: The typed id of the artifact.
+   470→
+   471→        Raises:
+   472→            InvalidStateTransition: If the pack is not in ``draft``.
+   473→            InvariantViolation: If ``kind`` is empty or ``artifact_id``
+   474→                is already in the list for ``kind``.
+   475→        """
+   476→        self._assert_status(ContentStatus.DRAFT, "add_artifact")
+   477→        if not isinstance(kind, str) or not kind.strip():
+   478→            raise InvariantViolation(
+   479→                "ContentPack",
+   480→                "artifact kind must be a non-empty string",
+   481→            )
+   482→        bucket = self._artifact_ids.setdefault(kind, [])
+   483→        if artifact_id in bucket:
+   484→            raise InvariantViolation(
+   485→                "ContentPack",
+   486→                f"artifact {artifact_id!r} already in pack under kind {kind!r}",
+   487→            )
+   488→        bucket.append(artifact_id)
+   489→
+   490→    def remove_artifact(self, kind: str, artifact_id: Any) -> None:
+   491→        """Remove an artifact reference from the pack.
+   492→
+   493→        Args:
+   494→            kind: The artifact kind the id was added under.
+   495→            artifact_id: The typed id of the artifact to remove.
+   496→
+   497→        Raises:
+   498→            InvalidStateTransition: If the pack is not in ``draft``.
+   499→            InvariantViolation: If ``kind`` is unknown or ``artifact_id``
+   500→                is not in the list for ``kind``.
+   501→        """
+   502→        self._assert_status(ContentStatus.DRAFT, "remove_artifact")
+   503→        bucket = self._artifact_ids.get(kind)
+   504→        if bucket is None or artifact_id not in bucket:
+   505→            raise InvariantViolation(
+   506→                "ContentPack",
+   507→                f"artifact {artifact_id!r} not in pack under kind {kind!r}",
+   508→            )
+   509→        bucket.remove(artifact_id)
+   510→
+   511→    # ------------------------------------------------------------------
+   512→    # Lifecycle: submit / approve / request_changes / reject / publish
+   513→    # ------------------------------------------------------------------
+   514→
+   515→    def submit_for_review(self) -> None:
+   516→        """Transition the pack from ``draft`` to ``in_review``.
+   517→
+   518→        Pre-state: ``draft``.
+   519→        Post-state: ``in_review`` with no approved stages (a fresh
+   520→        review cycle starts here).
+   521→
+   522→        Raises:
+   523→            ContentPackAlreadySubmitted: If the pack is already in
+   524→                ``in_review``.
+   525→            ContentPackAlreadyPublished: If the pack is published.
+   526→            ContentPackAlreadyRejected: If the pack is rejected.
+   527→            InvalidStateTransition: If the pack is in any other state.
+   528→        """
+   529→        self._assert_not_terminal()
+   530→        if self._status == ContentStatus.IN_REVIEW:
+   531→            raise ContentPackAlreadySubmitted(self._id)
+   532→        self._assert_status(ContentStatus.DRAFT, "submit_for_review")
+   533→
+   534→        self._status = ContentStatus.IN_REVIEW
+   535→        # A fresh submission clears any stale approvals from a prior cycle.
+   536→        self._approved_stages = set()
+   537→        self._record_event(
+   538→            ContentPackSubmittedForReview(
+   539→                content_pack_id=self._id,
+   540→                subject_id=self._subject_id,
+   541→                author_id=self._author_id,
+   542→            )
+   543→        )
+   544→
+   545→    def approve(self, stage: ReviewStage, reviewer_id: UserId) -> None:
+   546→        """Record a reviewer's approval at ``stage``.
+   547→
+   548→        The pack stays in ``in_review`` status — multiple stages must
+   549→        approve (see :attr:`required_stages`) before :meth:`publish` is
+   550→        allowed.
+   551→
+   552→        Args:
+   553→            stage: The review stage being approved. Must be in
+   554→                :attr:`required_stages`.
+   555→            reviewer_id: The user recording the approval. Recorded on
+   556→                the event for audit.
+   557→
+   558→        Raises:
+   559→            ContentPackAlreadyPublished: If the pack is published.
+   560→            ContentPackAlreadyRejected: If the pack is rejected.
+   561→            ContentPackNotInReview: If the pack is in ``draft``.
+   562→            ContentPackStageAlreadyApproved: If ``stage`` has already
+   563→                approved this submission cycle.
+   564→            InvariantViolation: If ``stage`` is not in
+   565→                :attr:`required_stages`.
+   566→        """
+   567→        self._assert_not_terminal()
+   568→        if self._status != ContentStatus.IN_REVIEW:
+   569→            raise ContentPackNotInReview(self._id, self._status.value)
+   570→        if stage not in self._required_stages:
+   571→            raise InvariantViolation(
+   572→                "ContentPack",
+   573→                f"stage {stage!r} is not in required_stages {sorted(s.value for s in self._required_stages)!r}",
+   574→            )
+   575→        if stage in self._approved_stages:
+   576→            raise ContentPackStageAlreadyApproved(self._id, stage)
+   577→
+   578→        self._approved_stages.add(stage)
+   579→        self._record_event(
+   580→            ContentPackApproved(
+   581→                content_pack_id=self._id,
+   582→                subject_id=self._subject_id,
+   583→                stage=stage,
+   584→                reviewer_id=reviewer_id,
+   585→            )
+   586→        )
+   587→
+   588→    def request_changes(self, reviewer_id: UserId, notes: str) -> None:
+   589→        """Return the pack to ``draft`` with reviewer notes attached.
+   590→
+   591→        Pre-state: ``in_review``.
+   592→        Post-state: ``draft`` with ``notes`` appended to
+   593→        :attr:`change_request_notes` and all stage approvals cleared
+   594→        (a fresh review cycle is required after the author re-submits).
+   595→
+   596→        Args:
+   597→            reviewer_id: The user requesting the changes.
+   598→            notes: A human-readable description of the requested
+   599→                changes. Recorded for the author.
+   600→
+   601→        Raises:
+   602→            ContentPackAlreadyPublished: If the pack is published.
+   603→            ContentPackAlreadyRejected: If the pack is rejected.
+   604→            ContentPackNotInReview: If the pack is in ``draft``.
+   605→            InvariantViolation: If ``notes`` is empty or too long.
+   606→        """
+   607→        self._assert_not_terminal()
+   608→        if self._status != ContentStatus.IN_REVIEW:
+   609→            raise ContentPackNotInReview(self._id, self._status.value)
+   610→        if not isinstance(notes, str) or not notes.strip():
+   611→            raise InvariantViolation(
+   612→                "ContentPack",
+   613→                "notes must be a non-empty string",
+   614→            )
+   615→        if len(notes) > self.MAX_NOTES_LENGTH:
+   616→            raise InvariantViolation(
+   617→                "ContentPack",
+   618→                f"notes must be at most {self.MAX_NOTES_LENGTH} characters",
+   619→            )
+   620→        cleaned = notes.strip()
+   621→
+   622→        self._status = ContentStatus.DRAFT
+   623→        self._approved_stages = set()
+   624→        self._change_request_notes.append(
+   625→            {
+   626→                "reviewer_id": reviewer_id,
+   627→                "notes": cleaned,
+   628→                "at": _utcnow(),
+   629→            }
+   630→        )
+   631→        self._record_event(
+   632→            ContentPackChangesRequested(
+   633→                content_pack_id=self._id,
+   634→                subject_id=self._subject_id,
+   635→                reviewer_id=reviewer_id,
+   636→                notes=cleaned,
+   637→            )
+   638→        )
+   639→
+   640→    def reject(self, reviewer_id: UserId, reason: str) -> None:
+   641→        """Transition the pack from ``in_review`` to ``rejected`` (terminal).
+   642→
+   643→        Pre-state: ``in_review``.
+   644→        Post-state: ``rejected`` with ``reason`` recorded. The pack
+   645→        cannot be re-opened — the author must create a new ContentPack
+   646→        with the requested corrections.
+   647→
+   648→        Args:
+   649→            reviewer_id: The user rejecting the pack.
+   650→            reason: A human-readable reason for the rejection.
+   651→
+   652→        Raises:
+   653→            ContentPackAlreadyPublished: If the pack is published.
+   654→            ContentPackAlreadyRejected: If the pack is already rejected.
+   655→            ContentPackNotInReview: If the pack is in ``draft``.
+   656→            InvariantViolation: If ``reason`` is empty or too long.
+   657→        """
+   658→        self._assert_not_terminal()
+   659→        if self._status != ContentStatus.IN_REVIEW:
+   660→            raise ContentPackNotInReview(self._id, self._status.value)
+   661→        if not isinstance(reason, str) or not reason.strip():
+   662→            raise InvariantViolation(
+   663→                "ContentPack",
+   664→                "reason must be a non-empty string",
+   665→            )
+   666→        if len(reason) > self.MAX_REASON_LENGTH:
+   667→            raise InvariantViolation(
+   668→                "ContentPack",
+   669→                f"reason must be at most {self.MAX_REASON_LENGTH} characters",
+   670→            )
+   671→        cleaned = reason.strip()
+   672→
+   673→        self._status = ContentStatus.REJECTED
+   674→        self._record_event(
+   675→            ContentPackRejected(
+   676→                content_pack_id=self._id,
+   677→                subject_id=self._subject_id,
+   678→                reviewer_id=reviewer_id,
+   679→                reason=cleaned,
+   680→            )
+   681→        )
+   682→
+   683→    def publish(
+   684→        self,
+   685→        content_version_id: ContentVersionId,
+   686→        now: datetime | None = None,
+   687→    ) -> None:
+   688→        """Transition the pack from ``in_review`` to ``published`` and bind it to ``content_version_id``.
+   689→
+   690→        Pre-state: ``in_review`` with every required :class:`ReviewStage`
+   691→        approved (see :attr:`is_review_complete`).
+   692→        Post-state: ``published`` with ``content_version_id`` and
+   693→        ``published_at`` set.
+   694→
+   695→        The application service is responsible, in the same
+   696→        transaction, for marking the bound :class:`ContentVersion` as
+   697→        published (see :meth:`ContentVersion.publish`) — that step
+   698→        lives outside this aggregate because ContentVersion has its
+   699→        own repository and is not part of the ContentPack aggregate
+   700→        boundary.
+   701→
+   702→        Args:
+   703→            content_version_id: The :class:`ContentVersion` to bind
+   704→                this pack's artifacts to. Must already exist (the
+   705→                application service creates it or selects an existing
+   706→                one).
+   707→            now: Optional timestamp (for testing); defaults to UTC now.
+   708→
+   709→        Raises:
+   710→            ContentPackAlreadyPublished: If the pack is already
+   711→                ``published``.
+   712→            ContentPackAlreadyRejected: If the pack is ``rejected``.
+   713→            ContentPackNotInReview: If the pack is ``draft`` (must be
+   714→                submitted for review first).
+   715→            ContentPackReviewIncomplete: If not every required review
+   716→                stage has approved.
+   717→        """
+   718→        self._assert_not_terminal()
+   719→        if self._status != ContentStatus.IN_REVIEW:
+   720→            raise ContentPackNotInReview(self._id, self._status.value)
+   721→        if not self.is_review_complete:
+   722→            raise ContentPackReviewIncomplete(self._id, self.missing_stages)
+   723→
+   724→        timestamp = now or _utcnow()
+   725→        self._status = ContentStatus.PUBLISHED
+   726→        self._content_version_id = content_version_id
+   727→        self._published_at = timestamp
+   728→        self._record_event(
+   729→            ContentPackPublished(
+   730→                content_pack_id=self._id,
+   731→                subject_id=self._subject_id,
+   732→                content_version_id=content_version_id,
+   733→                published_at=timestamp,
+   734→            )
+   735→        )
+   736→
+   737→    # ------------------------------------------------------------------
+   738→    # Repr
+   739→    # ------------------------------------------------------------------
+   740→
+   741→    def __repr__(self) -> str:
+   742→        return (
+   743→            f"ContentPack(id={self._id}, subject_id={self._subject_id}, "
+   744→            f"author_id={self._author_id}, name={self._name!r}, "
+   745→            f"status={self._status.value!r}, "
+   746→            f"approved_stages={sorted(s.value for s in self._approved_stages)!r})"
+   747→        )
+   748→
+   749→
+   750→__all__ = ["DEFAULT_REQUIRED_STAGES", "ContentPack"]
+   751→
