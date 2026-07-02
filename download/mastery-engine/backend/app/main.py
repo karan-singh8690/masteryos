@@ -3,11 +3,14 @@
 This is the main application factory. It:
 1. Configures structured logging.
 2. Creates the FastAPI application with CORS and middleware.
-3. Registers health check routes.
+3. Registers health check + business routes.
 4. Manages database lifecycle (startup/shutdown).
 
-Business endpoints (authentication, learning, content, etc.) will be
-registered here in future tasks per the OpenAPI contract (Task 006).
+Business endpoints are registered per the OpenAPI contract (Task 006):
+- /auth/* — Authentication (register, verify-email, login)
+- /enrollments — Learner enrollment
+- /study-sessions — Study session lifecycle
+- /study-sessions/{id}/adaptive-queue — Adaptive queue generation
 """
 
 from __future__ import annotations
@@ -83,7 +86,15 @@ def create_app() -> FastAPI:
     # ================================
     # Routes
     # ================================
+    # Health checks
     app.include_router(health_router, prefix="/api/v1")
+
+    # Business routes (Task 011: first vertical slice)
+    from app.presentation.api.v1.auth import router as auth_router
+    from app.presentation.api.v1.learning import router as learning_router
+
+    app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(learning_router, prefix="/api/v1")
 
     # Root endpoint
     @app.get("/", tags=["Root"])
