@@ -1,0 +1,58 @@
+# Railway Root Configuration — MasteryOS (Task 028)
+#
+# This file configures the Railway project structure.
+# Railway uses this when you connect a GitHub repo.
+#
+# Project structure:
+#   ├── backend   (FastAPI API + startup script)
+#   ├── worker    (Background worker)
+#   ├── frontend  (Next.js)
+#   ├── postgres  (Railway PostgreSQL plugin)
+#   └── redis     (Railway Redis plugin)
+#
+# Usage:
+#   1. Go to railway.app → New Project → Deploy from GitHub
+#   2. Select the karan-singh8690/masteryos repo
+#   3. Railway detects this config and creates all services
+#   4. Set environment variables (see RAILWAY_ENV_VARS.md)
+#   5. Deploy
+
+[config]
+# Railway project name
+name = "masteryos"
+
+# Backend service
+[services.backend]
+source = "backend/"
+buildCommand = "pip install -e ."
+startCommand = "python -m scripts.railway.startup_backend"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Worker service
+[services.worker]
+source = "backend/"
+buildCommand = "pip install -e ."
+startCommand = "python -m scripts.railway.startup_worker"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# Frontend service
+[services.frontend]
+source = "frontend/"
+buildCommand = "npm ci && npm run build"
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Database (Railway managed PostgreSQL plugin)
+[plugins.postgres]
+type = "postgresql"
+
+# Cache (Railway managed Redis plugin)
+[plugins.redis]
+type = "redis"

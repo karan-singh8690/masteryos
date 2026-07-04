@@ -1,0 +1,29 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cd backend && pip install -e .",
+    "watchPatterns": ["backend/**", "infrastructure/**"]
+  },
+  "deploy": {
+    "startCommand": "cd backend && python -m scripts.railway.startup_worker",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "sleepApplication": false,
+    "cronSchedule": ""
+  },
+  "environments": {
+    "production": {
+      "build": {
+        "builder": "NIXPACKS",
+        "buildCommand": "cd backend && pip install -e ."
+      },
+      "deploy": {
+        "startCommand": "cd backend && python -m scripts.railway.startup_worker",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10,
+        "sleepApplication": false
+      }
+    }
+  }
+}

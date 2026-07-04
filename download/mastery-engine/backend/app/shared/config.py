@@ -213,5 +213,14 @@ def get_settings() -> Settings:
 
     The cache ensures settings are loaded only once per process.
     Call `get_settings.cache_clear()` to reload (e.g., in tests).
+
+    Task 028: Automatically applies Railway environment variable overrides
+    (DATABASE_URL, REDIS_URL, PORT) when running on Railway.
     """
-    return Settings()
+    settings = Settings()
+
+    # Task 028: Apply Railway environment overrides
+    from app.shared.railway_config import apply_railway_overrides
+    settings = apply_railway_overrides(settings)
+
+    return settings
