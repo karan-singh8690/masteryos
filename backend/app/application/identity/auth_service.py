@@ -341,6 +341,9 @@ class ProductionAuthService:
             last_seen_at=now,
         )
         session.add(session_model)
+        # Flush to INSERT the session row immediately so the refresh_tokens
+        # FK constraint (refresh_tokens_session_id_fkey) is satisfied.
+        await session.flush()
 
         # Also record in refresh_tokens table (for rotation tracking)
         refresh_repo = RefreshTokenRepository(session)
