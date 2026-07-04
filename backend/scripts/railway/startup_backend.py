@@ -79,12 +79,13 @@ async def wait_for_redis(max_retries: int = 15, delay: float = 2.0) -> bool:
 async def create_tables() -> bool:
     """Create all database tables from ORM models using Base.metadata.create_all().
 
-    This replaces Alembic migrations + SQL init scripts. All 47 tables defined
-    in the ORM models will be created if they don't exist.
+    If the database is empty (fresh), creates all schemas + tables.
+    If the database already has the critical tables, skips creation.
+    If the database has partial/broken tables, drops everything and recreates.
     """
-    print("[startup] Creating database tables from ORM models...")
+    print("[startup] Setting up database tables...")
     try:
-        from sqlalchemy import text
+        from sqlalchemy import text, inspect
         from sqlalchemy.ext.asyncio import create_async_engine
         from app.shared.config import get_settings
         from app.infrastructure.database.orm.base import Base
@@ -103,7 +104,7 @@ async def create_tables() -> bool:
         engine = create_async_engine(settings.database_url)
 
         async with engine.begin() as conn:
-            # Step 1: Create all schemas first (before tables reference them)
+            # Step 1: Create all schemas first
             print("[startup] Creating database schemas...")
             schemas = [
                 "identity", "content", "learning", "assessment", "mastery",
@@ -114,7 +115,37 @@ async def create_tables() -> bool:
                 await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
             print(f"[startup] Created {len(schemas)} schemas")
 
-            # Step 2: Create all tables from ORM models
+            # Step 2: Check if identity.users table exists and is complete
+            result = await conn.execute(text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = 'identity' AND table_name = 'users')"
+            ))
+            users_table_exists = result.scalar()
+
+            if users_table_exists:
+                # Check if the table has the 'status' column (indicates complete creation)
+                result = await conn.execute(text(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = 'identity' AND table_name = 'users' AND column_name = 'status')"
+                ))
+                has_status_column = result.scalar()
+
+                if has_status_column:
+                    print("[startup] Database already initialized — skipping table creation")
+                    await engine.dispose()
+                    return True
+                else:
+                    print("[startup] Database has partial/broken tables — dropping everything and recreating")
+                    await conn.run_sync(Base.metadata.drop_all)
+                    # Also drop any orphaned tables from partial creation
+                    for schema in schemas:
+                        await conn.execute(text(
+                            f'DROP SCHEMA IF EXISTS {schema} CASCADE'
+                        ))
+                        await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
+                    print("[startup] Dropped all schemas + tables, recreating...")
+
+            # Step 3: Create all tables from ORM models
             print("[startup] Creating tables from ORM models...")
             await conn.run_sync(Base.metadata.create_all)
 
