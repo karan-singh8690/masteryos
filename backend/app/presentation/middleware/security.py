@@ -258,12 +258,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # For cookie-based requests (refresh token), validate Origin
         origin = request.headers.get("Origin") or request.headers.get("Referer", "")
         if origin:
-            # Check if origin is in allowed list
-            allowed_origins = [
+            # Use CORS_ORIGINS from settings (dynamic) + always allow localhost for dev
+            from app.shared.config import get_settings
+            try:
+                settings = get_settings()
+                allowed_origins = settings.cors_origins_list
+            except Exception:
+                allowed_origins = []
+            # Always include localhost for development
+            allowed_origins = list(allowed_origins) + [
                 "http://localhost:3000",
                 "http://localhost:8000",
-                "https://app.masteryengine.com",
-                "https://admin.masteryengine.com",
             ]
             if origin not in allowed_origins:
                 from fastapi.responses import JSONResponse
