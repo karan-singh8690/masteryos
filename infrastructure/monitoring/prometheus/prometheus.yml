@@ -1,0 +1,71 @@
+# Prometheus Configuration — Mastery Engine Production Monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'mastery-engine'
+    environment: 'production'
+
+# Alert rules
+rule_files:
+  - "alerts.yml"
+
+# Alerting
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# Scrape targets
+scrape_configs:
+  # Backend API metrics
+  - job_name: 'mastery-backend'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'backend'
+    scrape_interval: 10s
+
+  # Worker metrics (via backend admin API)
+  - job_name: 'mastery-workers'
+    metrics_path: /api/v1/admin/bg/workers/metrics
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'workers'
+    scrape_interval: 15s
+
+  # Frontend health
+  - job_name: 'mastery-frontend'
+    metrics_path: /api/v1/health
+    static_configs:
+      - targets: ['frontend:3000']
+        labels:
+          service: 'frontend'
+    scrape_interval: 30s
+
+  # PostgreSQL metrics (requires postgres_exporter)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+    scrape_interval: 30s
+
+  # Redis metrics (requires redis_exporter)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+    scrape_interval: 15s
+
+  # Nginx metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+        labels:
+          service: 'nginx'
+    scrape_interval: 15s
