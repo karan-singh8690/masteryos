@@ -12,7 +12,7 @@ import { TOKEN_STORAGE_KEY } from '@/lib/constants'
  * that mirrors the access token presence.
  */
 
-const PUBLIC_ROUTES = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/health', '/offline', '/maintenance', '/unauthorized', '/forbidden', '/session-expired']
+const PUBLIC_ROUTES = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/verify-email', '/health', '/offline', '/maintenance', '/unauthorized', '/forbidden', '/session-expired', '/privacy', '/terms']
 
 // Task 027: Public marketing/docs/support routes that don't require auth.
 const PUBLIC_PREFIXES = [
