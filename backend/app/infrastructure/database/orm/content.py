@@ -213,5 +213,6 @@ class ContentPackModel(Base):
     author_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     artifact_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
