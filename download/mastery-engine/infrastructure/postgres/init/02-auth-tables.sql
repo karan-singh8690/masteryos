@@ -183,14 +183,54 @@ CREATE INDEX IF NOT EXISTS idx_auth_audit_logs_correlation
     ON identity.auth_audit_logs(correlation_id);
 
 -- ============================================================
+-- Task 025-deploy fix #15: enforce immutability of auth_audit_logs.
+-- The table is described as "immutable append-only" but the original
+-- grants included UPDATE and DELETE. This trigger raises an exception
+-- on any UPDATE or DELETE attempt, preserving the audit trail.
+-- (INSERT is still allowed.)
+-- ============================================================
+CREATE OR REPLACE FUNCTION identity.prevent_audit_log_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'auth_audit_logs is immutable — UPDATE and DELETE are not allowed';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_audit_logs_no_update ON identity.auth_audit_logs;
+CREATE TRIGGER trg_audit_logs_no_update
+    BEFORE UPDATE ON identity.auth_audit_logs
+    FOR EACH ROW EXECUTE FUNCTION identity.prevent_audit_log_mutation();
+
+DROP TRIGGER IF EXISTS trg_audit_logs_no_delete ON identity.auth_audit_logs;
+CREATE TRIGGER trg_audit_logs_no_delete
+    BEFORE DELETE ON identity.auth_audit_logs
+    FOR EACH ROW EXECUTE FUNCTION identity.prevent_audit_log_mutation();
+
+-- Revoke UPDATE and DELETE from the application role.
+-- (The application only needs INSERT and SELECT on audit logs.)
+REVOKE UPDATE, DELETE ON identity.auth_audit_logs FROM mastery;
+
+-- ============================================================
 -- Add token_version column to users (for invalidating all tokens
 -- on password change). Default = 1; bump on password change.
+-- These ALTERs are idempotent — they're also in 00-base-tables.sql,
+-- but kept here so that databases created before Task 025-deploy also
+-- get the columns.
 -- ============================================================
 ALTER TABLE identity.users
     ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE identity.users
     ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;
+
+-- Task 025-deploy: add role + last_login_at columns (idempotent).
+-- The role column is required for RBAC enforcement on admin endpoints.
+ALTER TABLE identity.users
+    ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'learner'
+    CHECK (role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'administrator', 'system_admin'));
+
+ALTER TABLE identity.users
+    ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
 -- ============================================================
 -- Update sessions table to add token_family_id (if not present)

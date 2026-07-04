@@ -1,0 +1,20 @@
+{
+  "name": "@masteryos/sdk",
+  "version": "1.0.0",
+  "description": "Official MasteryOS JavaScript/TypeScript SDK",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": ["masteryos", "learning", "education", "sdk", "api"],
+  "license": "MIT",
+  "author": "Mastery Engine <dev@masteryos.com>",
+  "homepage": "https://docs.masteryos.com",
+  "repository": { "type": "git", "url": "https://github.com/masteryos/js-sdk" },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

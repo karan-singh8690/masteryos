@@ -77,7 +77,18 @@ next-env.d.ts
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
 !.env.example
+
+# ================================
+# Secrets & Keys (Task 027-verify)
+# ================================
+keys/
+infrastructure/nginx/ssl/
+infrastructure/postgres/ssl/
+*.pem
+*.key
 
 # ================================
 # Docker

@@ -79,6 +79,19 @@ class Settings(BaseSettings):
         password_part = f":{self.redis_password}@" if self.redis_password else ""
         return f"redis://{password_part}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
+    @property
+    def smtp_url(self) -> str:
+        """Build smtp:// URL for SMTP connections (uses starttls= scheme hint)."""
+        scheme = "smtp+starttls" if self.smtp_use_tls else "smtp"
+        user_part = f"{self.smtp_username}:" if self.smtp_username else ""
+        pass_part = f"{self.smtp_password}@" if self.smtp_password else ""
+        return f"{scheme}://{user_part}{pass_part}{self.smtp_host}:{self.smtp_port}"
+
+    @property
+    def smtp_from_address(self) -> str:
+        """Build a 'Name <email>' formatted From address."""
+        return f"{self.smtp_from_name} <{self.smtp_from_email}>"
+
     # ================================
     # Security
     # ================================
@@ -116,6 +129,53 @@ class Settings(BaseSettings):
     # ================================
     enable_docs: bool = True
     """Enable /docs and /redoc OpenAPI UI. Disable in production."""
+
+    # ================================
+    # Closed Beta
+    # ================================
+    closed_beta_enabled: bool = False
+    """When True, registration requires a valid invite token."""
+    max_beta_users: int = 20
+    """Maximum number of registered users allowed during closed beta."""
+    beta_invite_token_ttl_hours: int = 168  # 7 days
+    """How long invite tokens remain valid."""
+
+    # ================================
+    # Beta Feature Flags (dynamically configurable)
+    # ================================
+    beta_flag_learning_enabled: bool = True
+    beta_flag_content_authoring_enabled: bool = True
+    beta_flag_ai_enabled: bool = False
+    beta_flag_notifications_enabled: bool = True
+    beta_flag_analytics_enabled: bool = True
+    beta_flag_admin_console_enabled: bool = True
+
+    # ================================
+    # SMTP / Email (Task 025-deploy)
+    # ================================
+    smtp_host: str = "localhost"
+    """SMTP server hostname (e.g. smtp.postmarkapp.com)."""
+    smtp_port: int = 587
+    """SMTP server port (587 for STARTTLS, 465 for implicit TLS)."""
+    smtp_username: str | None = None
+    """SMTP username (often the API key for providers like Postmark)."""
+    smtp_password: str | None = None
+    """SMTP password / API key secret."""
+    smtp_use_tls: bool = True
+    """Whether to use STARTTLS (port 587) or implicit TLS (port 465)."""
+    smtp_from_email: str = "noreply@masteryengine.com"
+    """Default From address for outbound email."""
+    smtp_from_name: str = "Mastery Engine"
+    """Default From display name."""
+    # Frontend base URL (used to construct links in emails)
+    frontend_base_url: str = "http://localhost:3000"
+    """Base URL of the frontend (for building email links)."""
+
+    # ================================
+    # Observability — Sentry (Task 027-verify)
+    # ================================
+    sentry_dsn: str | None = None
+    """Sentry DSN for error tracking. When set, Sentry SDK is initialized at startup."""
 
     # ================================
     # Validators

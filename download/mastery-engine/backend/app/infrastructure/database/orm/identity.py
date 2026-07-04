@@ -27,6 +27,10 @@ class UserModel(Base):
             "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pending_deletion', 'anonymized')",
             name="chk_users_status",
         ),
+        CheckConstraint(
+            "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'administrator', 'system_admin')",
+            name="chk_users_role",
+        ),
         Index("idx_users_email_active", "email", unique=True, postgresql_where=text("deleted_at IS NULL")),
         {"schema": "identity"},
     )
@@ -34,9 +38,17 @@ class UserModel(Base):
     email: Mapped[str] = mapped_column(Text, nullable=False)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending_verification")
+    # Task 025-deploy: role column for RBAC enforcement.
+    role: Mapped[str] = mapped_column(String(30), nullable=False, default="learner")
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mfa_secret_encrypted: Mapped[bytes | None] = mapped_column(nullable=True)
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Task 016: token_version bumps invalidate all of a user's tokens.
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Task 025-deploy: last_login_at for analytics + security audit.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     profile: Mapped[UserProfileModel | None] = relationship(

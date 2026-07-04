@@ -607,10 +607,13 @@ class ProductionAuthService:
                 )
 
         # Issue tokens + create session
+        # Task 025-deploy: read role from the user record so admin tokens
+        # carry the administrator role for RBAC enforcement downstream.
+        user_roles = [user_model.role] if getattr(user_model, "role", None) else [ROLE_LEARNER]
         auth_result = await self.issue_tokens_for_user(
             session=session,
             user_id=user_model.id,
-            roles=[ROLE_LEARNER],
+            roles=user_roles,
             device_fingerprint=device_fingerprint,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -717,8 +720,21 @@ class ProductionAuthService:
         )
 
         # Issue new access token
+        # Task 025-deploy: read the user's role from the DB so the new
+        # access token carries the correct role claims for RBAC.
+        user_for_role = await session.get(UserModel, token_model.user_id)
+        if user_for_role is None:
+            # User was deleted between token issue and refresh — refuse.
+            return RefreshResult(
+                success=False,
+                error="User not found",
+                session_revoked=False,
+            )
+        user_roles = [getattr(user_for_role, "role", None) or ROLE_LEARNER]
         access_token = self._jwt_service.issue_access_token(
-            user_id=token_model.user_id, roles=[ROLE_LEARNER], token_version=1
+            user_id=token_model.user_id,
+            roles=user_roles,
+            token_version=getattr(user_for_role, "token_version", 1),
         )
 
         # Update session last_seen_at

@@ -279,3 +279,8 @@ class OutboxEventModel(TimestampMixin, Base):
     dispatch_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_dispatch_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Task 017: visibility timeout + retry tracking
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    leased_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

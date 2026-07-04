@@ -36,6 +36,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # --- Startup ---
     configure_logging()
     logger.info("application_starting", version="0.1.0")
+
+    # Initialize Sentry error tracking (Task 027-verify)
+    settings = get_settings()
+    if settings.sentry_dsn:
+        from app.infrastructure.observability import SentryIntegration
+        sentry = SentryIntegration(dsn=settings.sentry_dsn, environment=settings.app_env.value)
+        sentry.initialize()
+        logger.info("sentry_integration_started")
+    else:
+        logger.info("sentry_not_configured")
+
     await init_database()
     logger.info("application_started")
 
@@ -104,12 +115,22 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.questions import router as questions_router
     from app.presentation.api.v1.content_admin import router as content_admin_router
     from app.presentation.api.v1.users import router as users_router
+    from app.presentation.api.v1.admin import router as admin_router
+    from app.presentation.api.v1.beta import router as beta_router
+    # Task 026: Closed Beta Operations Platform router (admin-only analytics + ops endpoints).
+    from app.presentation.api.v1.beta_ops import router as beta_ops_router
+    # Task 025-deploy: import beta_templates so its email templates register
+    # into the TEMPLATES dict at app startup.
+    from app.infrastructure.email import beta_templates  # noqa: F401
 
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(learning_router, prefix="/api/v1")
     app.include_router(questions_router, prefix="/api/v1")
     app.include_router(content_admin_router, prefix="/api/v1")
+    app.include_router(admin_router, prefix="/api/v1")
+    app.include_router(beta_router, prefix="/api/v1")
+    app.include_router(beta_ops_router, prefix="/api/v1")
 
     # Root endpoint
     @app.get("/", tags=["Root"])

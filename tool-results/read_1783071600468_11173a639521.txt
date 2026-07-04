@@ -1,0 +1,859 @@
+     1→"""Email service — SMTP abstraction with templates.
+     2→
+     3→Features:
+     4→- SMTP abstraction (pluggable backend: real SMTP, in-memory for tests, etc.)
+     5→- HTML + plain text + multipart support
+     6→- Templates for all notification types (verification, reset, welcome, etc.)
+     7→- Retry on transient SMTP failures
+     8→- Bounce detection abstraction
+     9→- Rate limiting (per-recipient + per-template)
+    10→- Attachment support
+    11→
+    12→Templates (per Task 017 spec):
+    13→- verification (email verification)
+    14→- password_reset
+    15→- welcome
+    16→- session_alert (new device login)
+    17→- security_incident
+    18→- subscription
+    19→- achievement
+    20→- reminder
+    21→- weekly_progress
+    22→- system_notification
+    23→
+    24→Usage:
+    25→    email_service = EmailService(smtp_client=SmtpClient(...))
+    26→    await email_service.send_template(
+    27→        to="user@example.com",
+    28→        template_name="verification",
+    29→        context={"verification_url": "https://..."},
+    30→        user_id=user_id,
+    31→    )
+    32→"""
+    33→
+    34→from __future__ import annotations
+    35→
+    36→import asyncio
+    37→import html
+    38→from abc import ABC, abstractmethod
+    39→from collections.abc import Awaitable, Callable
+    40→from dataclasses import dataclass, field
+    41→from datetime import datetime, timezone as tz_utc
+    42→from email.mime.multipart import MIMEMultipart
+    43→from email.mime.text import MIMEText
+    44→from email.mime.base import MIMEBase
+    45→from email import encoders
+    46→from typing import Any
+    47→from uuid import UUID
+    48→
+    49→from app.shared.logging import get_logger
+    50→
+    51→logger = get_logger(__name__)
+    52→
+    53→
+    54→# ============================================================
+    55→# SMTP Client Abstraction
+    56→# ============================================================
+    57→
+    58→
+    59→@dataclass
+    60→class EmailMessage:
+    61→    """An email message to be sent."""
+    62→
+    63→    to: str
+    64→    from_: str
+    65→    subject: str
+    66→    html_body: str | None = None
+    67→    text_body: str | None = None
+    68→    attachments: list[dict[str, Any]] = field(default_factory=list)
+    69→    # attachment: {"filename": str, "content": bytes, "mime_type": str}
+    70→
+    71→    headers: dict[str, str] = field(default_factory=dict)
+    72→
+    73→
+    74→@dataclass
+    75→class SendResult:
+    76→    """Result of sending an email."""
+    77→
+    78→    success: bool
+    79→    message_id: str | None = None
+    80→    smtp_response: str | None = None
+    81→    error: str | None = None
+    82→    bounced: bool = False
+    83→    bounce_type: str | None = None  # "hard" or "soft"
+    84→
+    85→
+    86→class SmtpClient(ABC):
+    87→    """Abstract SMTP client — pluggable backend."""
+    88→
+    89→    @abstractmethod
+    90→    async def send(self, message: EmailMessage) -> SendResult:
+    91→        """Send an email. Returns the result."""
+    92→        ...
+    93→
+    94→
+    95→class InMemorySmtpClient(SmtpClient):
+    96→    """In-memory SMTP client for tests + development.
+    97→
+    98→    Stores all sent emails in a list. Does NOT actually send anything.
+    99→    """
+   100→
+   101→    def __init__(self) -> None:
+   102→        self.sent_emails: list[EmailMessage] = []
+   103→        self.fail_count = 0  # Number of times to fail (for testing retries)
+   104→        self._failure_mode = False
+   105→
+   106→    def set_failure_mode(self, fail: bool = True, count: int = 1) -> None:
+   107→        """Configure the client to fail the next N sends (for testing)."""
+   108→        self._failure_mode = fail
+   109→        self.fail_count = count
+   110→
+   111→    async def send(self, message: EmailMessage) -> SendResult:
+   112→        if self._failure_mode and self.fail_count > 0:
+   113→            self.fail_count -= 1
+   114→            if self.fail_count == 0:
+   115→                self._failure_mode = False
+   116→            return SendResult(
+   117→                success=False,
+   118→                error="Simulated SMTP failure",
+   119→            )
+   120→
+   121→        self.sent_emails.append(message)
+   122→        message_id = f"inmem-{len(self.sent_emails)}@masteryengine.local"
+   123→        return SendResult(
+   124→            success=True,
+   125→            message_id=message_id,
+   126→            smtp_response="250 OK queued",
+   127→        )
+   128→
+   129→
+   130→class ProductionSmtpClient(SmtpClient):
+   131→    """Production SMTP client using Python's built-in smtplib.
+   132→
+   133→    Uses asyncio.to_thread to avoid blocking the event loop. This avoids
+   134→    a hard dependency on aiosmtplib while still being production-usable.
+   135→
+   136→    Configured via the Settings class (SMTP_HOST, SMTP_PORT, etc.).
+   137→    For testing, use InMemorySmtpClient.
+   138→    """
+   139→
+   140→    def __init__(
+   141→        self,
+   142→        host: str = "localhost",
+   143→        port: int = 587,
+   144→        username: str | None = None,
+   145→        password: str | None = None,
+   146→        use_tls: bool = True,
+   147→        from_address: str = "noreply@masteryengine.com",
+   148→    ) -> None:
+   149→        self._host = host
+   150→        self._port = port
+   151→        self._username = username
+   152→        self._password = password
+   153→        self._use_tls = use_tls
+   154→        self._from_address = from_address
+   155→
+   156→    @classmethod
+   157→    def from_settings(cls, settings: Any) -> "ProductionSmtpClient":
+   158→        """Build a ProductionSmtpClient from the application Settings."""
+   159→        return cls(
+   160→            host=settings.smtp_host,
+   161→            port=settings.smtp_port,
+   162→            username=settings.smtp_username,
+   163→            password=settings.smtp_password,
+   164→            use_tls=settings.smtp_use_tls,
+   165→            from_address=settings.smtp_from_address,
+   166→        )
+   167→
+   168→    def _build_mime_message(self, message: EmailMessage) -> MIMEMultipart:
+   169→        """Build a MIMEMultipart message from our EmailMessage dataclass."""
+   170→        msg = MIMEMultipart("alternative")
+   171→        msg["Subject"] = message.subject
+   172→        msg["From"] = message.from_
+   173→        msg["To"] = message.to
+   174→        for k, v in message.headers.items():
+   175→            msg[k] = v
+   176→        if message.text_body:
+   177→            msg.attach(MIMEText(message.text_body, "plain", "utf-8"))
+   178→        if message.html_body:
+   179→            msg.attach(MIMEText(message.html_body, "html", "utf-8"))
+   180→        for att in message.attachments:
+   181→            part = MIMEBase(att.get("mime_type", "application/octet-stream").split("/")[0],
+   182→                            att.get("mime_type", "application/octet-stream").split("/")[1])
+   183→            part.set_payload(att["content"])
+   184→            encoders.encode_base64(part)
+   185→            part.add_header("Content-Disposition", f'attachment; filename="{att["filename"]}"')
+   186→            msg.attach(part)
+   187→        return msg
+   188→
+   189→    def _send_sync(self, message: EmailMessage) -> SendResult:
+   190→        """Synchronous send — runs in a thread via asyncio.to_thread."""
+   191→        import smtplib
+   192→        import ssl
+   193→        from email.utils import make_msgid
+   194→
+   195→        msg = self._build_mime_message(message)
+   196→        msg_id = make_msgid(domain=self._host)
+   197→        msg["Message-ID"] = msg_id
+   198→
+   199→        try:
+   200→            # Port 465 = implicit TLS; port 587 = STARTTLS; port 25 = plain
+   201→            if self._port == 465:
+   202→                context = ssl.create_default_context()
+   203→                with smtplib.SMTP_SSL(self._host, self._port, context=context, timeout=30) as smtp:
+   204→                    if self._username and self._password:
+   205→                        smtp.login(self._username, self._password)
+   206→                    smtp.send_message(msg)
+   207→            else:
+   208→                with smtplib.SMTP(self._host, self._port, timeout=30) as smtp:
+   209→                    smtp.ehlo()
+   210→                    if self._use_tls:
+   211→                        context = ssl.create_default_context()
+   212→                        smtp.starttls(context=context)
+   213→                        smtp.ehlo()
+   214→                    if self._username and self._password:
+   215→                        smtp.login(self._username, self._password)
+   216→                    smtp.send_message(msg)
+   217→            return SendResult(
+   218→                success=True,
+   219→                message_id=msg_id,
+   220→                smtp_response="250 OK queued",
+   221→            )
+   222→        except smtplib.SMTPRecipientsRefused as exc:
+   223→            return SendResult(
+   224→                success=False,
+   225→                error=f"Recipient refused: {exc.recipients}",
+   226→                bounced=True,
+   227→                bounce_type="hard",
+   228→            )
+   229→        except smtplib.SMTPAuthenticationError as exc:
+   230→            logger.error("smtp_auth_failed", host=self._host, port=self._port, error=str(exc))
+   231→            return SendResult(
+   232→                success=False,
+   233→                error=f"SMTP auth failed: {exc}",
+   234→            )
+   235→        except smtplib.SMTPException as exc:
+   236→            return SendResult(
+   237→                success=False,
+   238→                error=f"SMTP error: {exc}",
+   239→            )
+   240→        except OSError as exc:
+   241→            return SendResult(
+   242→                success=False,
+   243→                error=f"Network error: {exc}",
+   244→            )
+   245→
+   246→    async def send(self, message: EmailMessage) -> SendResult:
+   247→        """Send an email via SMTP (non-blocking via asyncio.to_thread)."""
+   248→        logger.info(
+   249→            "email_send_attempt",
+   250→            to=message.to,
+   251→            subject=message.subject,
+   252→            host=self._host,
+   253→            port=self._port,
+   254→        )
+   255→        result = await asyncio.to_thread(self._send_sync, message)
+   256→        if result.success:
+   257→            logger.info(
+   258→                "email_sent",
+   259→                to=message.to,
+   260→                subject=message.subject,
+   261→                message_id=result.message_id,
+   262→            )
+   263→        else:
+   264→            logger.warning(
+   265→                "email_send_failed",
+   266→                to=message.to,
+   267→                subject=message.subject,
+   268→                error=result.error,
+   269→                bounced=result.bounced,
+   270→            )
+   271→        return result
+   272→
+   273→
+   274→# ============================================================
+   275→# Email Templates
+   276→# ============================================================
+   277→
+   278→
+   279→class EmailTemplate:
+   280→    """Base class for email templates."""
+   281→
+   282→    name: str = "base"
+   283→    subject: str = "Mastery Engine"
+   284→    category: str = "system"
+   285→
+   286→    def render_subject(self, context: dict[str, Any]) -> str:
+   287→        return self.subject.format(**context)
+   288→
+   289→    @abstractmethod
+   290→    def render_html(self, context: dict[str, Any]) -> str:
+   291→        ...
+   292→
+   293→    @abstractmethod
+   294→    def render_text(self, context: dict[str, Any]) -> str:
+   295→        ...
+   296→
+   297→
+   298→class VerificationEmailTemplate(EmailTemplate):
+   299→    name = "verification"
+   300→    subject = "Verify your email — Mastery Engine"
+   301→    category = "security"
+   302→
+   303→    def render_html(self, context: dict[str, Any]) -> str:
+   304→        url = html.escape(context.get("verification_url", ""))
+   305→        display_name = html.escape(context.get("display_name", "there"))
+   306→        return f"""\
+   307→<!DOCTYPE html>
+   308→<html>
+   309→<head><meta charset="utf-8"></head>
+   310→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   311→  <h2>Welcome to Mastery Engine, {display_name}!</h2>
+   312→  <p>Please verify your email address by clicking the button below:</p>
+   313→  <p>
+   314→    <a href="{url}"
+   315→       style="background-color: #4F46E5; color: white; padding: 12px 24px;
+   316→              text-decoration: none; border-radius: 4px; display: inline-block;">
+   317→      Verify Email
+   318→    </a>
+   319→  </p>
+   320→  <p>Or copy this link into your browser:</p>
+   321→  <p><a href="{url}">{url}</a></p>
+   322→  <p style="color: #6B7280; font-size: 12px; margin-top: 32px;">
+   323→    If you didn't create an account, you can safely ignore this email.
+   324→    This link expires in 24 hours.
+   325→  </p>
+   326→</body>
+   327→</html>"""
+   328→
+   329→    def render_text(self, context: dict[str, Any]) -> str:
+   330→        url = context.get("verification_url", "")
+   331→        display_name = context.get("display_name", "there")
+   332→        return f"""\
+   333→Welcome to Mastery Engine, {display_name}!
+   334→
+   335→Please verify your email address by visiting:
+   336→
+   337→{url}
+   338→
+   339→This link expires in 24 hours.
+   340→
+   341→If you didn't create an account, you can safely ignore this email.
+   342→"""
+   343→
+   344→
+   345→class PasswordResetEmailTemplate(EmailTemplate):
+   346→    name = "password_reset"
+   347→    subject = "Reset your password — Mastery Engine"
+   348→    category = "security"
+   349→
+   350→    def render_html(self, context: dict[str, Any]) -> str:
+   351→        url = html.escape(context.get("reset_url", ""))
+   352→        return f"""\
+   353→<!DOCTYPE html>
+   354→<html>
+   355→<head><meta charset="utf-8"></head>
+   356→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   357→  <h2>Reset your password</h2>
+   358→  <p>We received a request to reset your password. Click the button below to choose a new one:</p>
+   359→  <p>
+   360→    <a href="{url}"
+   361→       style="background-color: #4F46E5; color: white; padding: 12px 24px;
+   362→              text-decoration: none; border-radius: 4px; display: inline-block;">
+   363→      Reset Password
+   364→    </a>
+   365→  </p>
+   366→  <p>Or copy this link into your browser:</p>
+   367→  <p><a href="{url}">{url}</a></p>
+   368→  <p style="color: #DC2626; font-weight: bold;">
+   369→    If you didn't request a password reset, please secure your account immediately.
+   370→  </p>
+   371→  <p style="color: #6B7280; font-size: 12px;">
+   372→    This link expires in 15 minutes.
+   373→  </p>
+   374→</body>
+   375→</html>"""
+   376→
+   377→    def render_text(self, context: dict[str, Any]) -> str:
+   378→        url = context.get("reset_url", "")
+   379→        return f"""\
+   380→Reset your password
+   381→
+   382→We received a request to reset your password. Visit the link below to choose a new one:
+   383→
+   384→{url}
+   385→
+   386→This link expires in 15 minutes.
+   387→
+   388→If you didn't request a password reset, please secure your account immediately.
+   389→"""
+   390→
+   391→
+   392→class WelcomeEmailTemplate(EmailTemplate):
+   393→    name = "welcome"
+   394→    subject = "Welcome to Mastery Engine! 🎉"
+   395→    category = "marketing"
+   396→
+   397→    def render_html(self, context: dict[str, Any]) -> str:
+   398→        display_name = html.escape(context.get("display_name", "there"))
+   399→        return f"""\
+   400→<!DOCTYPE html>
+   401→<html>
+   402→<head><meta charset="utf-8"></head>
+   403→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   404→  <h2>Welcome, {display_name}! 🎉</h2>
+   405→  <p>You're all set up. Here's what you can do next:</p>
+   406→  <ul>
+   407→    <li>Complete your first learning goal</li>
+   408→    <li>Explore Python interview prep courses</li>
+   409→    <li>Set up your study schedule</li>
+   410→  </ul>
+   411→  <p>Happy learning!</p>
+   412→  <p>— The Mastery Engine Team</p>
+   413→</body>
+   414→</html>"""
+   415→
+   416→    def render_text(self, context: dict[str, Any]) -> str:
+   417→        display_name = context.get("display_name", "there")
+   418→        return f"""\
+   419→Welcome, {display_name}!
+   420→
+   421→You're all set up. Here's what you can do next:
+   422→- Complete your first learning goal
+   423→- Explore Python interview prep courses
+   424→- Set up your study schedule
+   425→
+   426→Happy learning!
+   427→
+   428→— The Mastery Engine Team
+   429→"""
+   430→
+   431→
+   432→class SessionAlertEmailTemplate(EmailTemplate):
+   433→    name = "session_alert"
+   434→    subject = "New login — Mastery Engine"
+   435→    category = "security"
+   436→
+   437→    def render_html(self, context: dict[str, Any]) -> str:
+   438→        ip = html.escape(context.get("ip_address", "unknown"))
+   439→        user_agent = html.escape(context.get("user_agent", "unknown"))
+   440→        location = html.escape(context.get("location", "unknown"))
+   441→        time_str = html.escape(context.get("time", "recently"))
+   442→        return f"""\
+   443→<!DOCTYPE html>
+   444→<html>
+   445→<head><meta charset="utf-8"></head>
+   446→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   447→  <h2>New login detected</h2>
+   448→  <p>We detected a new login to your Mastery Engine account:</p>
+   449→  <table style="border-collapse: collapse;">
+   450→    <tr><td style="padding: 4px 12px; color: #6B7280;">When:</td><td>{time_str}</td></tr>
+   451→    <tr><td style="padding: 4px 12px; color: #6B7280;">IP Address:</td><td>{ip}</td></tr>
+   452→    <tr><td style="padding: 4px 12px; color: #6B7280;">Location:</td><td>{location}</td></tr>
+   453→    <tr><td style="padding: 4px 12px; color: #6B7280;">Device:</td><td>{user_agent}</td></tr>
+   454→  </table>
+   455→  <p>If this was you, no action is needed.</p>
+   456→  <p style="color: #DC2626;">
+   457→    If this wasn't you, please change your password immediately and review your account security.
+   458→  </p>
+   459→</body>
+   460→</html>"""
+   461→
+   462→    def render_text(self, context: dict[str, Any]) -> str:
+   463→        ip = context.get("ip_address", "unknown")
+   464→        user_agent = context.get("user_agent", "unknown")
+   465→        location = context.get("location", "unknown")
+   466→        time_str = context.get("time", "recently")
+   467→        return f"""\
+   468→New login detected
+   469→
+   470→We detected a new login to your Mastery Engine account:
+   471→  When: {time_str}
+   472→  IP Address: {ip}
+   473→  Location: {location}
+   474→  Device: {user_agent}
+   475→
+   476→If this was you, no action is needed.
+   477→If this wasn't you, please change your password immediately.
+   478→"""
+   479→
+   480→
+   481→class SecurityIncidentEmailTemplate(EmailTemplate):
+   482→    name = "security_incident"
+   483→    subject = "⚠️ Security alert — Mastery Engine"
+   484→    category = "security"
+   485→
+   486→    def render_html(self, context: dict[str, Any]) -> str:
+   487→        incident_type = html.escape(context.get("incident_type", "Security incident"))
+   488→        description = html.escape(context.get("description", ""))
+   489→        return f"""\
+   490→<!DOCTYPE html>
+   491→<html>
+   492→<head><meta charset="utf-8"></head>
+   493→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   494→  <h2 style="color: #DC2626;">⚠️ Security alert</h2>
+   495→  <p><strong>Incident type:</strong> {incident_type}</p>
+   496→  <p><strong>Description:</strong> {description}</p>
+   497→  <p>We detected suspicious activity on your account. As a precaution:</p>
+   498→  <ol>
+   499→    <li>All your sessions have been revoked.</li>
+   500→    <li>You'll need to log in again.</li>
+   501→    <li>Consider changing your password.</li>
+   502→  </ol>
+   503→</body>
+   504→</html>"""
+   505→
+   506→    def render_text(self, context: dict[str, Any]) -> str:
+   507→        incident_type = context.get("incident_type", "Security incident")
+   508→        description = context.get("description", "")
+   509→        return f"""\
+   510→SECURITY ALERT
+   511→
+   512→Incident type: {incident_type}
+   513→Description: {description}
+   514→
+   515→We detected suspicious activity on your account. As a precaution:
+   516→1. All your sessions have been revoked.
+   517→2. You'll need to log in again.
+   518→3. Consider changing your password.
+   519→"""
+   520→
+   521→
+   522→class AchievementEmailTemplate(EmailTemplate):
+   523→    name = "achievement"
+   524→    subject = "🏆 Achievement unlocked!"
+   525→    category = "achievement"
+   526→
+   527→    def render_html(self, context: dict[str, Any]) -> str:
+   528→        achievement = html.escape(context.get("achievement_name", "Achievement"))
+   529→        description = html.escape(context.get("description", ""))
+   530→        return f"""\
+   531→<!DOCTYPE html>
+   532→<html>
+   533→<head><meta charset="utf-8"></head>
+   534→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   535→  <h2>🏆 Achievement unlocked!</h2>
+   536→  <p>Congratulations! You've earned:</p>
+   537→  <p style="font-size: 20px; font-weight: bold;">{achievement}</p>
+   538→  <p>{description}</p>
+   539→  <p>Keep up the great work!</p>
+   540→</body>
+   541→</html>"""
+   542→
+   543→    def render_text(self, context: dict[str, Any]) -> str:
+   544→        achievement = context.get("achievement_name", "Achievement")
+   545→        description = context.get("description", "")
+   546→        return f"""\
+   547→ACHIEVEMENT UNLOCKED!
+   548→
+   549→Congratulations! You've earned: {achievement}
+   550→
+   551→{description}
+   552→
+   553→Keep up the great work!
+   554→"""
+   555→
+   556→
+   557→class ReminderEmailTemplate(EmailTemplate):
+   558→    name = "reminder"
+   559→    subject = "📚 Time to study — Mastery Engine"
+   560→    category = "reminder"
+   561→
+   562→    def render_html(self, context: dict[str, Any]) -> str:
+   563→        concept = html.escape(context.get("concept_name", "a concept"))
+   564→        due = html.escape(context.get("due_at", "soon"))
+   565→        return f"""\
+   566→<!DOCTYPE html>
+   567→<html>
+   568→<head><meta charset="utf-8"></head>
+   569→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   570→  <h2>📚 Time to study</h2>
+   571→  <p>You have a review due for: <strong>{concept}</strong></p>
+   572→  <p>Due: {due}</p>
+   573→  <p>Spaced repetition works best when you review on time. Log in now to keep your streak!</p>
+   574→</body>
+   575→</html>"""
+   576→
+   577→    def render_text(self, context: dict[str, Any]) -> str:
+   578→        concept = context.get("concept_name", "a concept")
+   579→        due = context.get("due_at", "soon")
+   580→        return f"""\
+   581→Time to study
+   582→
+   583→You have a review due for: {concept}
+   584→Due: {due}
+   585→
+   586→Spaced repetition works best when you review on time. Log in now to keep your streak!
+   587→"""
+   588→
+   589→
+   590→class WeeklyProgressEmailTemplate(EmailTemplate):
+   591→    name = "weekly_progress"
+   592→    subject = "📊 Your weekly progress — Mastery Engine"
+   593→    category = "reminder"
+   594→
+   595→    def render_html(self, context: dict[str, Any]) -> str:
+   596→        questions = context.get("questions_answered", 0)
+   597→        accuracy = context.get("accuracy", 0)
+   598→        streak = context.get("streak", 0)
+   599→        return f"""\
+   600→<!DOCTYPE html>
+   601→<html>
+   602→<head><meta charset="utf-8"></head>
+   603→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   604→  <h2>📊 Your weekly progress</h2>
+   605→  <table style="border-collapse: collapse;">
+   606→    <tr><td style="padding: 8px 16px;">Questions answered:</td><td><strong>{questions}</strong></td></tr>
+   607→    <tr><td style="padding: 8px 16px;">Accuracy:</td><td><strong>{accuracy:.1f}%</strong></td></tr>
+   608→    <tr><td style="padding: 8px 16px;">Current streak:</td><td><strong>{streak} days 🔥</strong></td></tr>
+   609→  </table>
+   610→  <p>Keep up the great work!</p>
+   611→</body>
+   612→</html>"""
+   613→
+   614→    def render_text(self, context: dict[str, Any]) -> str:
+   615→        questions = context.get("questions_answered", 0)
+   616→        accuracy = context.get("accuracy", 0)
+   617→        streak = context.get("streak", 0)
+   618→        return f"""\
+   619→Your weekly progress
+   620→
+   621→  Questions answered: {questions}
+   622→  Accuracy: {accuracy:.1f}%
+   623→  Current streak: {streak} days
+   624→
+   625→Keep up the great work!
+   626→"""
+   627→
+   628→
+   629→class SystemNotificationEmailTemplate(EmailTemplate):
+   630→    name = "system_notification"
+   631→    subject = "Mastery Engine — {title}"
+   632→    category = "system"
+   633→
+   634→    def render_html(self, context: dict[str, Any]) -> str:
+   635→        title = html.escape(context.get("title", "Notification"))
+   636→        body = html.escape(context.get("body", ""))
+   637→        return f"""\
+   638→<!DOCTYPE html>
+   639→<html>
+   640→<head><meta charset="utf-8"></head>
+   641→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   642→  <h2>{title}</h2>
+   643→  <p>{body}</p>
+   644→</body>
+   645→</html>"""
+   646→
+   647→    def render_text(self, context: dict[str, Any]) -> str:
+   648→        title = context.get("title", "Notification")
+   649→        body = context.get("body", "")
+   650→        return f"{title}\n\n{body}"
+   651→
+   652→
+   653→class SubscriptionEmailTemplate(EmailTemplate):
+   654→    name = "subscription"
+   655→    subject = "Subscription update — Mastery Engine"
+   656→    category = "system"
+   657→
+   658→    def render_html(self, context: dict[str, Any]) -> str:
+   659→        action = html.escape(context.get("action", "updated"))
+   660→        plan = html.escape(context.get("plan_name", ""))
+   661→        return f"""\
+   662→<!DOCTYPE html>
+   663→<html>
+   664→<head><meta charset="utf-8"></head>
+   665→<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+   666→  <h2>Subscription {action}</h2>
+   667→  <p>Your subscription has been {action}.</p>
+   668→  <p>Plan: <strong>{plan}</strong></p>
+   669→</body>
+   670→</html>"""
+   671→
+   672→    def render_text(self, context: dict[str, Any]) -> str:
+   673→        action = context.get("action", "updated")
+   674→        plan = context.get("plan_name", "")
+   675→        return f"Subscription {action}\n\nYour subscription has been {action}.\nPlan: {plan}"
+   676→
+   677→
+   678→# Registry of all templates
+   679→TEMPLATES: dict[str, EmailTemplate] = {
+   680→    "verification": VerificationEmailTemplate(),
+   681→    "password_reset": PasswordResetEmailTemplate(),
+   682→    "welcome": WelcomeEmailTemplate(),
+   683→    "session_alert": SessionAlertEmailTemplate(),
+   684→    "security_incident": SecurityIncidentEmailTemplate(),
+   685→    "achievement": AchievementEmailTemplate(),
+   686→    "reminder": ReminderEmailTemplate(),
+   687→    "weekly_progress": WeeklyProgressEmailTemplate(),
+   688→    "system_notification": SystemNotificationEmailTemplate(),
+   689→    "subscription": SubscriptionEmailTemplate(),
+   690→}
+   691→
+   692→
+   693→# ============================================================
+   694→# Email Service
+   695→# ============================================================
+   696→
+   697→
+   698→class EmailService:
+   699→    """Email service — renders templates + sends via SMTP.
+   700→
+   701→    Usage:
+   702→        service = EmailService(smtp_client=InMemorySmtpClient())
+   703→        result = await service.send_template(
+   704→            to="user@example.com",
+   705→            template_name="verification",
+   706→            context={"verification_url": "https://..."},
+   707→        )
+   708→    """
+   709→
+   710→    DEFAULT_FROM = "noreply@masteryengine.com"
+   711→
+   712→    def __init__(
+   713→        self,
+   714→        smtp_client: SmtpClient | None = None,
+   715→        from_address: str | None = None,
+   716→        rate_limit_per_minute: int = 60,
+   717→    ) -> None:
+   718→        self._smtp = smtp_client or InMemorySmtpClient()
+   719→        self._from = from_address or self.DEFAULT_FROM
+   720→        self._rate_limit = rate_limit_per_minute
+   721→        self._send_times: list[float] = []  # For rate limiting
+   722→
+   723→    async def send_template(
+   724→        self,
+   725→        to: str,
+   726→        template_name: str,
+   727→        context: dict[str, Any],
+   728→        user_id: UUID | None = None,
+   729→        notification_id: UUID | None = None,
+   730→        from_address: str | None = None,
+   731→    ) -> SendResult:
+   732→        """Render a template and send the email.
+   733→
+   734→        Args:
+   735→            to: Recipient email address.
+   736→            template_name: Name of the template (must be in TEMPLATES).
+   737→            context: Template context variables.
+   738→            user_id: Optional user ID (for audit log).
+   739→            notification_id: Optional notification ID (for audit log).
+   740→            from_address: Optional from address (defaults to service's from).
+   741→
+   742→        Returns:
+   743→            SendResult with success/failure details.
+   744→        """
+   745→        template = TEMPLATES.get(template_name)
+   746→        if template is None:
+   747→            logger.error("unknown_email_template", template_name=template_name)
+   748→            return SendResult(
+   749→                success=False,
+   750→                error=f"Unknown template: {template_name}",
+   751→            )
+   752→
+   753→        # Rate limit check
+   754→        if not await self._check_rate_limit():
+   755→            logger.warning("email_rate_limited", to=to)
+   756→            return SendResult(
+   757→                success=False,
+   758→                error="Rate limit exceeded",
+   759→            )
+   760→
+   761→        # Render
+   762→        subject = template.render_subject(context)
+   763→        html_body = template.render_html(context)
+   764→        text_body = template.render_text(context)
+   765→
+   766→        message = EmailMessage(
+   767→            to=to,
+   768→            from_=from_address or self._from,
+   769→            subject=subject,
+   770→            html_body=html_body,
+   771→            text_body=text_body,
+   772→        )
+   773→
+   774→        # Send
+   775→        result = await self._smtp.send(message)
+   776→
+   777→        logger.info(
+   778→            "email_sent" if result.success else "email_send_failed",
+   779→            to=to,
+   780→            subject=subject,
+   781→            template_name=template_name,
+   782→            user_id=str(user_id) if user_id else None,
+   783→            success=result.success,
+   784→            message_id=result.message_id,
+   785→            error=result.error,
+   786→            bounced=result.bounced,
+   787→        )
+   788→
+   789→        return result
+   790→
+   791→    async def send_raw(
+   792→        self,
+   793→        to: str,
+   794→        subject: str,
+   795→        html_body: str,
+   796→        text_body: str | None = None,
+   797→        from_address: str | None = None,
+   798→    ) -> SendResult:
+   799→        """Send a raw email (no template)."""
+   800→        message = EmailMessage(
+   801→            to=to,
+   802→            from_=from_address or self._from,
+   803→            subject=subject,
+   804→            html_body=html_body,
+   805→            text_body=text_body,
+   806→        )
+   807→        return await self._smtp.send(message)
+   808→
+   809→    def get_template_names(self) -> list[str]:
+   810→        """Return all available template names."""
+   811→        return list(TEMPLATES.keys())
+   812→
+   813→    def render_template(
+   814→        self, template_name: str, context: dict[str, Any]
+   815→    ) -> tuple[str, str, str] | None:
+   816→        """Render a template without sending. Returns (subject, html, text) or None."""
+   817→        template = TEMPLATES.get(template_name)
+   818→        if template is None:
+   819→            return None
+   820→        return (
+   821→            template.render_subject(context),
+   822→            template.render_html(context),
+   823→            template.render_text(context),
+   824→        )
+   825→
+   826→    async def _check_rate_limit(self) -> bool:
+   827→        """Check if we're under the rate limit. Returns True if allowed."""
+   828→        import time
+   829→        now = time.time()
+   830→        # Remove timestamps older than 60 seconds
+   831→        self._send_times = [t for t in self._send_times if now - t < 60]
+   832→        if len(self._send_times) >= self._rate_limit:
+   833→            return False
+   834→        self._send_times.append(now)
+   835→        return True
+   836→
+   837→
+   838→__all__ = [
+   839→    "EmailService",
+   840→    "EmailMessage",
+   841→    "SendResult",
+   842→    "SmtpClient",
+   843→    "InMemorySmtpClient",
+   844→    "ProductionSmtpClient",
+   845→    "EmailTemplate",
+   846→    "TEMPLATES",
+   847→    # Templates
+   848→    "VerificationEmailTemplate",
+   849→    "PasswordResetEmailTemplate",
+   850→    "WelcomeEmailTemplate",
+   851→    "SessionAlertEmailTemplate",
+   852→    "SecurityIncidentEmailTemplate",
+   853→    "AchievementEmailTemplate",
+   854→    "ReminderEmailTemplate",
+   855→    "WeeklyProgressEmailTemplate",
+   856→    "SystemNotificationEmailTemplate",
+   857→    "SubscriptionEmailTemplate",
+   858→]
+   859→

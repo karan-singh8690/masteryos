@@ -1,0 +1,13 @@
+{
+  "name": "MasteryOS",
+  "short_name": "MasteryOS",
+  "description": "The Operating System for Learning — adaptive mastery tracking for Python interview prep and beyond.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563EB",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/brand/logo-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

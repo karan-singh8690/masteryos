@@ -1,0 +1,462 @@
+# Production Docker Compose — Mastery Engine
+# Optimized for production with health checks, resource limits, and restart policies.
+#
+# Task 025-deploy fixes applied:
+#   - PostgreSQL SSL certs mounted (fix #1)
+#   - Explicit networks for backend + monitoring tiers (fix #9)
+#   - Prometheus exporters + Alertmanager added (fix #5)
+#   - SMTP env vars passed to backend + worker (fix #6)
+#   - Healthchecks use curl (now installed in Dockerfiles, fix #3)
+#   - SMTP + FRONTEND_BASE_URL wired so beta invite emails work (fix #8)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Environment variables (set in .env.production):
+#   DATABASE_PASSWORD, REDIS_PASSWORD, JWT_SECRET_KEY, SMTP_PASSWORD, etc.
+
+version: '3.9'
+
+services:
+  # ============================================================
+  # PostgreSQL (production-tuned, SSL-enabled)
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    networks: [backend]
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-mastery}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME:-mastery_engine}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
+      - ./infrastructure/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      # Task 025-deploy fix #1: mount SSL certs so `ssl=on` in postgresql.conf works.
+      - ./infrastructure/postgres/ssl/postgres.pem:/etc/ssl/certs/postgres.pem:ro
+      - ./infrastructure/postgres/ssl/postgres-key.pem:/etc/ssl/private/postgres-key.pem:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-mastery} -d ${DATABASE_NAME:-mastery_engine}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ============================================================
+  # Redis (production-tuned)
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks: [backend]
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --requirepass ${REDIS_PASSWORD:-}
+      --timeout 300
+      --tcp-keepalive 60
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      # Pass the password so the ping succeeds when requirepass is set.
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1.0'
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ============================================================
+  # Backend API
+  # ============================================================
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    restart: always
+    networks: [backend, frontend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DATABASE_USER:-mastery}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-mastery_engine}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      JWT_ALGORITHM: RS256
+      JWT_KEYS_DIR: /app/keys
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.masteryengine.com}
+      ENABLE_DOCS: "false"
+      CLOSED_BETA_ENABLED: ${CLOSED_BETA_ENABLED:-true}
+      MAX_BETA_USERS: ${MAX_BETA_USERS:-20}
+      BETA_INVITE_TOKEN_TTL_HOURS: ${BETA_INVITE_TOKEN_TTL_HOURS:-168}
+      # Task 025-deploy fix #6: SMTP env vars so emails actually send.
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@masteryengine.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Mastery Engine}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://app.masteryengine.com}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - ./keys:/app/keys:ro
+      - backend_logs:/app/logs
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # Task 025-deploy fix #3: curl is now installed in the Dockerfile.
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v1/health/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # ============================================================
+  # Background Worker
+  # ============================================================
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    restart: always
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DATABASE_USER:-mastery}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-mastery_engine}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      CLOSED_BETA_ENABLED: ${CLOSED_BETA_ENABLED:-true}
+      MAX_BETA_USERS: ${MAX_BETA_USERS:-20}
+      # Worker also sends emails (email sender processor).
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@masteryengine.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Mastery Engine}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://app.masteryengine.com}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    command: python -m app.workers.worker_main
+    volumes:
+      - worker_logs:/app/logs
+    healthcheck:
+      # Task 025-deploy fix #3: use curl (installed in Dockerfile) instead of `requests`.
+      test: ["CMD", "curl", "-sf", "http://backend:8000/api/v1/admin/bg/workers"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # ============================================================
+  # Frontend (Next.js)
+  # ============================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infrastructure/docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL:-https://api.masteryengine.com}
+        NEXT_PUBLIC_APP_NAME: "Mastery Engine"
+    restart: always
+    networks: [frontend]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # curl is now installed in the frontend Dockerfile.
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ============================================================
+  # Nginx Reverse Proxy
+  # ============================================================
+  nginx:
+    image: nginx:alpine
+    restart: always
+    networks: [frontend, backend, monitoring]
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # ============================================================
+  # Prometheus Exporters (Task 025-deploy fix #5)
+  # ============================================================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    restart: always
+    networks: [backend, monitoring]
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DATABASE_USER:-mastery}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-mastery_engine}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9187/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.59.0
+    restart: always
+    networks: [backend, monitoring]
+    command:
+      - --redis.addr=redis:6379
+      - --redis.password=${REDIS_PASSWORD:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9121/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:v1.1.0
+    restart: always
+    networks: [frontend, monitoring]
+    command:
+      - -nginx.scrape-uri=http://nginx:80/stub_status
+    depends_on:
+      - nginx
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9113/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ============================================================
+  # Prometheus (Monitoring)
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    restart: always
+    networks: [monitoring, backend, frontend]
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Task 025-deploy fix #5: alerts.yml is now shipped in the repo.
+      - ./infrastructure/monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - postgres-exporter
+      - redis-exporter
+      - nginx-exporter
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================================
+  # Alertmanager (Task 025-deploy fix #5)
+  # ============================================================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    restart: always
+    networks: [monitoring]
+    volumes:
+      - ./infrastructure/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ============================================================
+  # Grafana (Dashboards)
+  # ============================================================
+  grafana:
+    image: grafana/grafana:latest
+    restart: always
+    networks: [monitoring]
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Task 025-deploy fix #13: explicitly mount the dashboards directory so
+      # Grafana's file provider finds the production-overview.json.
+      - ./infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+# ============================================================
+# Networks (Task 025-deploy fix #9: explicit tiers)
+# ============================================================
+networks:
+  # Backend tier: postgres, redis, backend, worker, postgres-exporter, redis-exporter
+  backend:
+    driver: bridge
+  # Frontend tier: nginx ↔ frontend, nginx-exporter
+  frontend:
+    driver: bridge
+  # Monitoring tier: prometheus, alertmanager, grafana (can scrape backend + frontend)
+  monitoring:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_logs:
+  worker_logs:
+  nginx_logs:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:

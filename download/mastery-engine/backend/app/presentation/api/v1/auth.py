@@ -57,6 +57,7 @@ class RegisterRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
     timezone: str = Field(default="UTC")
     locale: str = Field(default="en-US")
+    invite_token: str | None = Field(default=None, description="Required when closed beta is enabled")
 
 
 class LoginRequest(BaseModel):
@@ -199,6 +200,24 @@ async def register(
 
     async with uow as _uow:
         session = _uow._session  # type: ignore[union-attr]
+
+        # ============================================================
+        # Closed Beta Registration Guard
+        # ============================================================
+        from app.application.beta import get_beta_service
+        beta_service = get_beta_service()
+        if beta_service.is_beta_enabled:
+            allowed, error_msg = await beta_service.check_registration_allowed(
+                session=session,
+                email=request.email,
+                invite_token=request.invite_token,
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=403,
+                    detail={"code": "BETA_REGISTRATION_DENIED", "message": error_msg},
+                )
+
         try:
             user_model, verification_token, _ = await auth_service.register(
                 session=session,
@@ -210,6 +229,9 @@ async def register(
                 timezone=request.timezone,
                 locale=request.locale,
             )
+            # Mark invite as used after successful registration
+            if beta_service.is_beta_enabled and request.invite_token:
+                await beta_service.mark_invite_used(session, request.invite_token)
             # Issue tokens
             auth_result = await auth_service.issue_tokens_for_user(
                 session=session,

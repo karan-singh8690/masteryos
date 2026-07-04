@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "masteryos"
+version = "1.0.0"
+description = "Official MasteryOS Python SDK"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Mastery Engine", email = "dev@masteryos.com" }]
+dependencies = ["httpx>=0.27.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://masteryos.com"
+Documentation = "https://docs.masteryos.com"
+Repository = "https://github.com/masteryos/python-sdk"
+
+[tool.setuptools.packages.find]
+where = ["."]

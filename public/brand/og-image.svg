@@ -1,0 +1,42 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MasteryOS — The Operating System for Learning">
+  <defs>
+    <linearGradient id="og-bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="og-mark" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="0.5" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#og-bg)"/>
+  <!-- Logo mark (large) -->
+  <g transform="translate(100, 200)">
+    <path d="M40 4 L72 22 L72 58 L40 76 L8 58 L8 22 Z" fill="url(#og-mark)"/>
+    <path d="M40 20 L56 48 L24 48 Z" fill="white" fill-opacity="0.95"/>
+    <circle cx="40" cy="14" r="4" fill="white"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="200" y="260" font-family="Inter, sans-serif" font-size="56" font-weight="700" fill="white" letter-spacing="-1">
+    Mastery<tspan fill="#60A5FA">OS</tspan>
+  </text>
+  <!-- Tagline -->
+  <text x="200" y="310" font-family="Inter, sans-serif" font-size="28" font-weight="400" fill="#94A3B8">
+    The Operating System for Learning
+  </text>
+  <!-- Feature bullets -->
+  <g transform="translate(200, 380)">
+    <circle cx="8" cy="8" r="4" fill="#14B8A6"/>
+    <text x="24" y="13" font-family="Inter, sans-serif" font-size="20" fill="#CBD5E1">Adaptive mastery tracking</text>
+  </g>
+  <g transform="translate(200, 420)">
+    <circle cx="8" cy="8" r="4" fill="#7C3AED"/>
+    <text x="24" y="13" font-family="Inter, sans-serif" font-size="20" fill="#CBD5E1">Spaced repetition reviews</text>
+  </g>
+  <g transform="translate(200, 460)">
+    <circle cx="8" cy="8" r="4" fill="#2563EB"/>
+    <text x="24" y="13" font-family="Inter, sans-serif" font-size="20" fill="#CBD5E1">AI-powered explanations</text>
+  </g>
+</svg>

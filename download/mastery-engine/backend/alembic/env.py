@@ -28,8 +28,18 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Target metadata — empty for now; models will be added in future tasks
-target_metadata = None
+# Target metadata — wired to Base.metadata so autogenerate works (Task 027-verify).
+# Import all ORM modules so their tables are registered in Base.metadata.
+from app.infrastructure.database.orm.base import Base  # noqa: E402
+from app.infrastructure.database.orm import identity  # noqa: E402,F401
+from app.infrastructure.database.orm import auth  # noqa: E402,F401
+from app.infrastructure.database.orm import core  # noqa: E402,F401
+from app.infrastructure.database.orm import content  # noqa: E402,F401
+from app.infrastructure.database.orm import background  # noqa: E402,F401
+from app.infrastructure.database.orm import beta  # noqa: E402,F401
+from app.infrastructure.database.orm import beta_ops  # noqa: E402,F401
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

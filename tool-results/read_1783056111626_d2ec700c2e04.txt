@@ -1,0 +1,829 @@
+     1→     1→"""Production authentication API routes — full vertical slice.
+     2→     2→
+     3→     3→Implements every authentication endpoint per the OpenAPI contract (Task 006):
+     4→     4→- POST /auth/register — Argon2id + verification token + access/refresh
+     5→     5→- POST /auth/login — Argon2id verify + MFA + session + tokens
+     6→     6→- POST /auth/refresh — single-use rotation + reuse detection
+     7→     7→- POST /auth/logout — current device only
+     8→     8→- POST /auth/logout-all — all devices
+     9→     9→- POST /auth/verify-email — single-use verification token
+    10→    10→- POST /auth/resend-verification — throttled
+    11→    11→- POST /auth/forgot-password — throttled, no email existence leak
+    12→    12→- POST /auth/reset-password — single-use, short TTL, Argon2id, revoke sessions
+    13→    13→- POST /auth/change-password — requires current password, revoke other sessions
+    14→    14→- POST /auth/mfa/setup — TOTP secret + QR URI + recovery codes
+    15→    15→- POST /auth/mfa/verify — verify a TOTP code
+    16→    16→- POST /auth/mfa/enable — finalize MFA setup (verify first code)
+    17→    17→- POST /auth/mfa/disable — requires password, admins exempt
+    18→    18→- POST /auth/mfa/recovery — use a recovery code
+    19→    19→
+    20→    20→All endpoints use the production security services from Task 015:
+    21→    21→- Argon2id (NO SHA256)
+    22→    22→- RS256 JWT (NO HS256)
+    23→    23→- Real verification tokens (NO fake verification)
+    24→    24→- Real session management (NO fake sessions)
+    25→    25→- Audit logging on every operation
+    26→    26→"""
+    27→    27→
+    28→    28→from __future__ import annotations
+    29→    29→
+    30→    30→from typing import Any
+    31→    31→from uuid import UUID
+    32→    32→
+    33→    33→from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+    34→    34→from pydantic import BaseModel, EmailStr, Field
+    35→    35→
+    36→    36→from app.application.identity.auth_service import ProductionAuthService
+    37→    37→from app.presentation.dependencies import (
+    38→    38→    get_auth_service,
+    39→    39→    get_current_user_id,
+    40→    40→    get_idempotency_key,
+    41→    41→    get_request_ip,
+    42→    42→    get_request_user_agent,
+    43→    43→    get_uow,
+    44→    44→)
+    45→    45→
+    46→    46→router = APIRouter(prefix="/auth", tags=["Authentication"])
+    47→    47→
+    48→    48→
+    49→    49→# ============================================================
+    50→    50→# Request / Response Models (match OpenAPI contract — Task 006)
+    51→    51→# ============================================================
+    52→    52→
+    53→    53→
+    54→    54→class RegisterRequest(BaseModel):
+    55→    55→    email: EmailStr
+    56→    56→    password: str = Field(min_length=12, description="Strong password (>= 12 chars)")
+    57→    57→    display_name: str = Field(min_length=1, max_length=100)
+    58→    58→    timezone: str = Field(default="UTC")
+    59→    59→    locale: str = Field(default="en-US")
+    60→    60→    invite_token: str | None = Field(default=None, description="Required when closed beta is enabled")
+    61→    61→
+    62→    62→
+    63→    63→class LoginRequest(BaseModel):
+    64→    64→    email: EmailStr
+    65→    65→    password: str
+    66→    66→    mfa_code: str | None = Field(default=None, description="TOTP code (if MFA enabled)")
+    67→    67→    recovery_code: str | None = Field(default=None, description="Recovery code (if MFA enabled)")
+    68→    68→
+    69→    69→
+    70→    70→class RefreshRequest(BaseModel):
+    71→    71→    refresh_token: str
+    72→    72→
+    73→    73→
+    74→    74→class VerifyEmailRequest(BaseModel):
+    75→    75→    token: str
+    76→    76→
+    77→    77→
+    78→    78→class ResendVerificationRequest(BaseModel):
+    79→    79→    email: EmailStr
+    80→    80→
+    81→    81→
+    82→    82→class ForgotPasswordRequest(BaseModel):
+    83→    83→    email: EmailStr
+    84→    84→
+    85→    85→
+    86→    86→class ResetPasswordRequest(BaseModel):
+    87→    87→    token: str
+    88→    88→    new_password: str = Field(min_length=12)
+    89→    89→
+    90→    90→
+    91→    91→class ChangePasswordRequest(BaseModel):
+    92→    92→    current_password: str
+    93→    93→    new_password: str = Field(min_length=12)
+    94→    94→
+    95→    95→
+    96→    96→class MfaSetupResponse(BaseModel):
+    97→    97→    secret: str
+    98→    98→    qr_code_uri: str
+    99→    99→    recovery_codes: list[str]
+   100→   100→
+   101→   101→
+   102→   102→class MfaVerifyRequest(BaseModel):
+   103→   103→    code: str
+   104→   104→    context: str = Field(default="login")
+   105→   105→
+   106→   106→
+   107→   107→class MfaEnableRequest(BaseModel):
+   108→   108→    totp_code: str
+   109→   109→    pending_secret: str
+   110→   110→
+   111→   111→
+   112→   112→class MfaDisableRequest(BaseModel):
+   113→   113→    password: str
+   114→   114→
+   115→   115→
+   116→   116→class MfaRecoveryRequest(BaseModel):
+   117→   117→    recovery_code: str
+   118→   118→
+   119→   119→
+   120→   120→class UserDTO(BaseModel):
+   121→   121→    id: UUID
+   122→   122→    email: str
+   123→   123→    status: str
+   124→   124→    mfa_enabled: bool
+   125→   125→    email_verified_at: str | None
+   126→   126→    created_at: str
+   127→   127→
+   128→   128→
+   129→   129→class AuthResponse(BaseModel):
+   130→   130→    access_token: str
+   131→   131→    refresh_token: str | None = None
+   132→   132→    expires_in: int
+   133→   133→    token_type: str = "Bearer"
+   134→   134→    user: UserDTO | None = None
+   135→   135→    requires_mfa: bool = False
+   136→   136→    mfa_session_token: str | None = None
+   137→   137→
+   138→   138→
+   139→   139→class MessageResponse(BaseModel):
+   140→   140→    message: str
+   141→   141→    code: str = "OK"
+   142→   142→
+   143→   143→
+   144→   144→# ============================================================
+   145→   145→# Helpers
+   146→   146→# ============================================================
+   147→   147→
+   148→   148→
+   149→   149→def _user_dto_from_dict(user: dict[str, Any]) -> UserDTO:
+   150→   150→    """Build a UserDTO from the dict returned by auth_service."""
+   151→   151→    return UserDTO(
+   152→   152→        id=UUID(user["id"]),
+   153→   153→        email=user["email"],
+   154→   154→        status=user["status"],
+   155→   155→        mfa_enabled=user["mfa_enabled"],
+   156→   156→        email_verified_at=user.get("email_verified_at"),
+   157→   157→        created_at=user.get("created_at") or "",
+   158→   158→    )
+   159→   159→
+   160→   160→
+   161→   161→def _build_auth_response(auth_result) -> AuthResponse:
+   162→   162→    """Build AuthResponse from AuthenticationResult."""
+   163→   163→    return AuthResponse(
+   164→   164→        access_token=auth_result.access_token,
+   165→   165→        refresh_token=auth_result.refresh_token,
+   166→   166→        expires_in=auth_result.expires_in,
+   167→   167→        user=_user_dto_from_dict(auth_result.user),
+   168→   168→    )
+   169→   169→
+   170→   170→
+   171→   171→# ============================================================
+   172→   172→# Registration
+   173→   173→# ============================================================
+   174→   174→
+   175→   175→
+   176→   176→@router.post(
+   177→   177→    "/register",
+   178→   178→    response_model=AuthResponse,
+   179→   179→    status_code=status.HTTP_201_CREATED,
+   180→   180→    summary="Register a new user",
+   181→   181→)
+   182→   182→async def register(
+   183→   183→    request: RegisterRequest,
+   184→   184→    raw_request: Request,
+   185→   185→    uow = Depends(get_uow),
+   186→   186→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   187→   187→    idempotency_key: str | None = Depends(get_idempotency_key),
+   188→   188→) -> AuthResponse:
+   189→   189→    """Register a new user account.
+   190→   190→
+   191→   191→    Flow:
+   192→   192→    1. Validate request
+   193→   193→    2. Argon2id hash password
+   194→   194→    3. Create User + UserCredential + verification token (transactional)
+   195→   195→    4. Issue access token + refresh token
+   196→   196→    5. Return verification_required state
+   197→   197→    """
+   198→   198→    ip = get_request_ip(raw_request)
+   199→   199→    user_agent = get_request_user_agent(raw_request)
+   200→   200→
+   201→   201→    async with uow as _uow:
+   202→   202→        session = _uow._session  # type: ignore[union-attr]
+   203→   203→
+   204→   204→        # ============================================================
+   205→   205→        # Closed Beta Registration Guard
+   206→   206→        # ============================================================
+   207→   207→        from app.application.beta import get_beta_service
+   208→   208→        beta_service = get_beta_service()
+   209→   209→        if beta_service.is_beta_enabled:
+   210→   210→            allowed, error_msg = await beta_service.check_registration_allowed(
+   211→   211→                session=session,
+   212→   212→                email=request.email,
+   213→   213→                invite_token=request.invite_token,
+   214→   214→            )
+   215→   215→            if not allowed:
+   216→   216→                raise HTTPException(
+   217→   217→                    status_code=403,
+   218→   218→                    detail={"code": "BETA_REGISTRATION_DENIED", "message": error_msg},
+   219→   219→                )
+   220→   220→
+   221→   221→        try:
+   222→   222→            user_model, verification_token, _ = await auth_service.register(
+   223→   223→                session=session,
+   224→   224→                email=request.email,
+   225→   225→                password=request.password,
+   226→   226→                display_name=request.display_name,
+   227→   227→                ip_address=ip,
+   228→   228→                user_agent=user_agent,
+   229→   229→                timezone=request.timezone,
+   230→   230→                locale=request.locale,
+   231→   231→            )
+   232→   232→            # Mark invite as used after successful registration
+   233→   233→            if beta_service.is_beta_enabled and request.invite_token:
+   234→   234→                await beta_service.mark_invite_used(session, request.invite_token)
+   235→   235→            # Issue tokens
+   236→   236→            auth_result = await auth_service.issue_tokens_for_user(
+   237→   237→                session=session,
+   238→   238→                user_id=user_model.id,
+   239→   239→                roles=["learner"],
+   240→   240→                device_fingerprint=None,
+   241→   241→                ip_address=ip,
+   242→   242→                user_agent=user_agent,
+   243→   243→            )
+   244→   244→            await _uow.commit()
+   245→   245→        except ValueError as exc:
+   246→   246→            if "EMAIL_ALREADY_REGISTERED" in str(exc):
+   247→   247→                raise HTTPException(
+   248→   248→                    status_code=409,
+   249→   249→                    detail={"code": "EMAIL_ALREADY_REGISTERED", "message": "Email already registered"},
+   250→   250→                )
+   251→   251→            raise HTTPException(
+   252→   252→                status_code=422,
+   253→   253→                detail={"code": "VALIDATION_FAILED", "message": str(exc)},
+   254→   254→            )
+   255→   255→
+   256→   256→    # NOTE: In production, verification_token is sent via email asynchronously.
+   257→   257→    # We do NOT return it in the response (security: don't expose the token).
+   258→   258→    return _build_auth_response(auth_result)
+   259→   259→
+   260→   260→
+   261→   261→# ============================================================
+   262→   262→# Login
+   263→   263→# ============================================================
+   264→   264→
+   265→   265→
+   266→   266→@router.post(
+   267→   267→    "/login",
+   268→   268→    response_model=AuthResponse,
+   269→   269→    summary="Login with email/password",
+   270→   270→)
+   271→   271→async def login(
+   272→   272→    request: LoginRequest,
+   273→   273→    raw_request: Request,
+   274→   274→    uow = Depends(get_uow),
+   275→   275→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   276→   276→) -> AuthResponse:
+   277→   277→    """Login with email and password.
+   278→   278→
+   279→   279→    If MFA is enabled, returns requires_mfa=true with a mfa_session_token.
+   280→   280→    The client re-submits with mfa_code or recovery_code + mfa_session_token.
+   281→   281→
+   282→   282→    Flow:
+   283→   283→    1. Validate credentials
+   284→   284→    2. PasswordService.verify_and_upgrade() (Argon2id)
+   285→   285→    3. Upgrade hash if needed
+   286→   286→    4. If MFA: require MFA code
+   287→   287→    5. Create Session
+   288→   288→    6. Issue JWT (RS256) + Refresh Token
+   289→   289→    7. Audit log (LOGIN_SUCCESS or LOGIN_FAILURE)
+   290→   290→    8. Publish UserLoggedIn
+   291→   291→    """
+   292→   292→    ip = get_request_ip(raw_request)
+   293→   293→    user_agent = get_request_user_agent(raw_request)
+   294→   294→
+   295→   295→    async with uow as _uow:
+   296→   296→        session = _uow._session  # type: ignore[union-attr]
+   297→   297→        result = await auth_service.login(
+   298→   298→            session=session,
+   299→   299→            email=request.email,
+   300→   300→            password=request.password,
+   301→   301→            mfa_code=request.mfa_code,
+   302→   302→            recovery_code=request.recovery_code,
+   303→   303→            device_fingerprint=None,
+   304→   304→            ip_address=ip,
+   305→   305→            user_agent=user_agent,
+   306→   306→        )
+   307→   307→        await _uow.commit()
+   308→   308→
+   309→   309→    if not result.success:
+   310→   310→        raise HTTPException(
+   311→   311→            status_code=401,
+   312→   312→            detail={"code": result.error_code or "INVALID_CREDENTIALS", "message": result.error or "Invalid credentials"},
+   313→   313→        )
+   314→   314→
+   315→   315→    if result.requires_mfa:
+   316→   316→        return AuthResponse(
+   317→   317→            access_token="",
+   318→   318→            expires_in=0,
+   319→   319→            requires_mfa=True,
+   320→   320→            mfa_session_token=result.mfa_session_token,
+   321→   321→        )
+   322→   322→
+   323→   323→    return _build_auth_response(result.auth)
+   324→   324→
+   325→   325→
+   326→   326→# ============================================================
+   327→   327→# Refresh
+   328→   328→# ============================================================
+   329→   329→
+   330→   330→
+   331→   331→@router.post(
+   332→   332→    "/refresh",
+   333→   333→    response_model=AuthResponse,
+   334→   334→    summary="Refresh access token (single-use rotation)",
+   335→   335→)
+   336→   336→async def refresh(
+   337→   337→    request: RefreshRequest,
+   338→   338→    raw_request: Request,
+   339→   339→    uow = Depends(get_uow),
+   340→   340→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   341→   341→) -> AuthResponse:
+   342→   342→    """Rotate a refresh token.
+   343→   343→
+   344→   344→    - Old refresh token is invalidated (single-use)
+   345→   345→    - New refresh token is issued (same family)
+   346→   346→    - New access token is issued
+   347→   347→    - If an already-rotated token is presented → reuse detected → family revoked
+   348→   348→    """
+   349→   349→    ip = get_request_ip(raw_request)
+   350→   350→    user_agent = get_request_user_agent(raw_request)
+   351→   351→
+   352→   352→    async with uow as _uow:
+   353→   353→        session = _uow._session  # type: ignore[union-attr]
+   354→   354→        result = await auth_service.refresh(
+   355→   355→            session=session,
+   356→   356→            raw_refresh_token=request.refresh_token,
+   357→   357→            ip_address=ip,
+   358→   358→            user_agent=user_agent,
+   359→   359→        )
+   360→   360→        await _uow.commit()
+   361→   361→
+   362→   362→    if not result.success:
+   363→   363→        if result.session_revoked:
+   364→   364→            raise HTTPException(
+   365→   365→                status_code=401,
+   366→   366→                detail={
+   367→   367→                    "code": "REFRESH_REUSE_DETECTED",
+   368→   368→                    "message": result.error or "Session revoked due to reuse detection",
+   369→   369→                },
+   370→   370→            )
+   371→   371→        raise HTTPException(
+   372→   372→            status_code=401,
+   373→   373→            detail={"code": "INVALID_REFRESH_TOKEN", "message": result.error or "Invalid refresh token"},
+   374→   374→        )
+   375→   375→
+   376→   376→    return AuthResponse(
+   377→   377→        access_token=result.access_token,
+   378→   378→        refresh_token=result.refresh_token,
+   379→   379→        expires_in=result.expires_in or 0,
+   380→   380→    )
+   381→   381→
+   382→   382→
+   383→   383→# ============================================================
+   384→   384→# Logout (current device)
+   385→   385→# ============================================================
+   386→   386→
+   387→   387→
+   388→   388→@router.post(
+   389→   389→    "/logout",
+   390→   390→    response_model=MessageResponse,
+   391→   391→    summary="Logout (current device only)",
+   392→   392→)
+   393→   393→async def logout(
+   394→   394→    raw_request: Request,
+   395→   395→    request: RefreshRequest | None = Body(default=None),
+   396→   396→    uow = Depends(get_uow),
+   397→   397→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   398→   398→    user_id: UUID | None = Depends(get_current_user_id),
+   399→   399→) -> MessageResponse:
+   400→   400→    """Logout — revoke the current session only.
+   401→   401→
+   402→   402→    The refresh_token in the body identifies the session to revoke.
+   403→   403→    """
+   404→   404→    ip = get_request_ip(raw_request)
+   405→   405→    user_agent = get_request_user_agent(raw_request)
+   406→   406→
+   407→   407→    refresh_token = request.refresh_token if request else None
+   408→   408→
+   409→   409→    async with uow as _uow:
+   410→   410→        session = _uow._session  # type: ignore[union-attr]
+   411→   411→        await auth_service.logout(
+   412→   412→            session=session,
+   413→   413→            raw_refresh_token=refresh_token,
+   414→   414→            user_id=user_id,
+   415→   415→            ip_address=ip,
+   416→   416→            user_agent=user_agent,
+   417→   417→        )
+   418→   418→        await _uow.commit()
+   419→   419→
+   420→   420→    return MessageResponse(message="Logged out", code="OK")
+   421→   421→
+   422→   422→
+   423→   423→# ============================================================
+   424→   424→# Logout All (every device)
+   425→   425→# ============================================================
+   426→   426→
+   427→   427→
+   428→   428→@router.post(
+   429→   429→    "/logout-all",
+   430→   430→    response_model=MessageResponse,
+   431→   431→    summary="Logout all devices",
+   432→   432→)
+   433→   433→async def logout_all(
+   434→   434→    raw_request: Request,
+   435→   435→    uow = Depends(get_uow),
+   436→   436→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   437→   437→    user_id: UUID = Depends(get_current_user_id),
+   438→   438→) -> MessageResponse:
+   439→   439→    """Logout all devices — revoke every session for the user."""
+   440→   440→    ip = get_request_ip(raw_request)
+   441→   441→    user_agent = get_request_user_agent(raw_request)
+   442→   442→
+   443→   443→    async with uow as _uow:
+   444→   444→        session = _uow._session  # type: ignore[union-attr]
+   445→   445→        count = await auth_service.logout_all(
+   446→   446→            session=session,
+   447→   447→            user_id=user_id,
+   448→   448→            ip_address=ip,
+   449→   449→            user_agent=user_agent,
+   450→   450→        )
+   451→   451→        await _uow.commit()
+   452→   452→
+   453→   453→    return MessageResponse(message=f"Logged out from {count} devices", code="OK")
+   454→   454→
+   455→   455→
+   456→   456→# ============================================================
+   457→   457→# Email Verification
+   458→   458→# ============================================================
+   459→   459→
+   460→   460→
+   461→   461→@router.post(
+   462→   462→    "/verify-email",
+   463→   463→    response_model=UserDTO,
+   464→   464→    summary="Verify email address",
+   465→   465→)
+   466→   466→async def verify_email(
+   467→   467→    request: VerifyEmailRequest,
+   468→   468→    raw_request: Request,
+   469→   469→    uow = Depends(get_uow),
+   470→   470→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   471→   471→) -> UserDTO:
+   472→   472→    """Verify a user's email with a verification token.
+   473→   473→
+   474→   474→    Tokens are single-use, expiring (24h default).
+   475→   475→    """
+   476→   476→    ip = get_request_ip(raw_request)
+   477→   477→    user_agent = get_request_user_agent(raw_request)
+   478→   478→
+   479→   479→    async with uow as _uow:
+   480→   480→        session = _uow._session  # type: ignore[union-attr]
+   481→   481→        try:
+   482→   482→            user_dict = await auth_service.verify_email(
+   483→   483→                session=session,
+   484→   484→                raw_token=request.token,
+   485→   485→                ip_address=ip,
+   486→   486→                user_agent=user_agent,
+   487→   487→            )
+   488→   488→            await _uow.commit()
+   489→   489→        except ValueError as exc:
+   490→   490→            raise HTTPException(
+   491→   491→                status_code=422,
+   492→   492→                detail={"code": "INVALID_TOKEN", "message": str(exc)},
+   493→   493→            )
+   494→   494→
+   495→   495→    return _user_dto_from_dict(user_dict)
+   496→   496→
+   497→   497→
+   498→   498→@router.post(
+   499→   499→    "/resend-verification",
+   500→   500→    response_model=MessageResponse,
+   501→   501→    summary="Resend verification email",
+   502→   502→)
+   503→   503→async def resend_verification(
+   504→   504→    request: ResendVerificationRequest,
+   505→   505→    raw_request: Request,
+   506→   506→    uow = Depends(get_uow),
+   507→   507→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   508→   508→) -> MessageResponse:
+   509→   509→    """Resend the verification email (throttled).
+   510→   510→
+   511→   511→    Always returns OK (does not leak whether the email exists).
+   512→   512→    """
+   513→   513→    ip = get_request_ip(raw_request)
+   514→   514→
+   515→   515→    async with uow as _uow:
+   516→   516→        session = _uow._session  # type: ignore[union-attr]
+   517→   517→        await auth_service.resend_verification(
+   518→   518→            session=session,
+   519→   519→            email=request.email,
+   520→   520→            ip_address=ip,
+   521→   521→        )
+   522→   522→        await _uow.commit()
+   523→   523→
+   524→   524→    return MessageResponse(
+   525→   525→        message="If the email exists and is unverified, a verification email has been sent.",
+   526→   526→        code="OK",
+   527→   527→    )
+   528→   528→
+   529→   529→
+   530→   530→# ============================================================
+   531→   531→# Password Reset
+   532→   532→# ============================================================
+   533→   533→
+   534→   534→
+   535→   535→@router.post(
+   536→   536→    "/forgot-password",
+   537→   537→    response_model=MessageResponse,
+   538→   538→    summary="Request a password reset email",
+   539→   539→)
+   540→   540→async def forgot_password(
+   541→   541→    request: ForgotPasswordRequest,
+   542→   542→    raw_request: Request,
+   543→   543→    uow = Depends(get_uow),
+   544→   544→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   545→   545→) -> MessageResponse:
+   546→   546→    """Request a password reset email.
+   547→   547→
+   548→   548→    Always returns OK (does not leak whether the email exists).
+   549→   549→    Throttled: max 1 request per 2 minutes per user.
+   550→   550→    """
+   551→   551→    ip = get_request_ip(raw_request)
+   552→   552→    user_agent = get_request_user_agent(raw_request)
+   553→   553→
+   554→   554→    async with uow as _uow:
+   555→   555→        session = _uow._session  # type: ignore[union-attr]
+   556→   556→        await auth_service.forgot_password(
+   557→   557→            session=session,
+   558→   558→            email=request.email,
+   559→   559→            ip_address=ip,
+   560→   560→            user_agent=user_agent,
+   561→   561→        )
+   562→   562→        await _uow.commit()
+   563→   563→
+   564→   564→    return MessageResponse(
+   565→   565→        message="If the email exists, a password reset link has been sent.",
+   566→   566→        code="OK",
+   567→   567→    )
+   568→   568→
+   569→   569→
+   570→   570→@router.post(
+   571→   571→    "/reset-password",
+   572→   572→    response_model=MessageResponse,
+   573→   573→    summary="Reset password with a token",
+   574→   574→)
+   575→   575→async def reset_password(
+   576→   576→    request: ResetPasswordRequest,
+   577→   577→    raw_request: Request,
+   578→   578→    uow = Depends(get_uow),
+   579→   579→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   580→   580→) -> MessageResponse:
+   581→   581→    """Reset password with a single-use, short-TTL token.
+   582→   582→
+   583→   583→    - Argon2id hash the new password
+   584→   584→    - Revoke all sessions + refresh tokens
+   585→   585→    - Invalidate all other reset tokens for the user
+   586→   586→    """
+   587→   587→    ip = get_request_ip(raw_request)
+   588→   588→    user_agent = get_request_user_agent(raw_request)
+   589→   589→
+   590→   590→    async with uow as _uow:
+   591→   591→        session = _uow._session  # type: ignore[union-attr]
+   592→   592→        try:
+   593→   593→            await auth_service.reset_password(
+   594→   594→                session=session,
+   595→   595→                raw_token=request.token,
+   596→   596→                new_password=request.new_password,
+   597→   597→                ip_address=ip,
+   598→   598→                user_agent=user_agent,
+   599→   599→            )
+   600→   600→            await _uow.commit()
+   601→   601→        except ValueError as exc:
+   602→   602→            raise HTTPException(
+   603→   603→                status_code=422,
+   604→   604→                detail={"code": "INVALID_TOKEN", "message": str(exc)},
+   605→   605→            )
+   606→   606→
+   607→   607→    return MessageResponse(message="Password reset successfully", code="OK")
+   608→   608→
+   609→   609→
+   610→   610→@router.post(
+   611→   611→    "/change-password",
+   612→   612→    response_model=MessageResponse,
+   613→   613→    summary="Change password (while authenticated)",
+   614→   614→)
+   615→   615→async def change_password(
+   616→   616→    request: ChangePasswordRequest,
+   617→   617→    raw_request: Request,
+   618→   618→    uow = Depends(get_uow),
+   619→   619→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   620→   620→    user_id: UUID = Depends(get_current_user_id),
+   621→   621→) -> MessageResponse:
+   622→   622→    """Change password (requires current password).
+   623→   623→
+   624→   624→    - Verify current password (Argon2id)
+   625→   625→    - Hash new password (Argon2id)
+   626→   626→    - Revoke all other sessions + refresh tokens
+   627→   627→    - Audit log
+   628→   628→    """
+   629→   629→    ip = get_request_ip(raw_request)
+   630→   630→    user_agent = get_request_user_agent(raw_request)
+   631→   631→
+   632→   632→    async with uow as _uow:
+   633→   633→        session = _uow._session  # type: ignore[union-attr]
+   634→   634→        try:
+   635→   635→            await auth_service.change_password(
+   636→   636→                session=session,
+   637→   637→                user_id=user_id,
+   638→   638→                current_password=request.current_password,
+   639→   639→                new_password=request.new_password,
+   640→   640→                ip_address=ip,
+   641→   641→                user_agent=user_agent,
+   642→   642→            )
+   643→   643→            await _uow.commit()
+   644→   644→        except ValueError as exc:
+   645→   645→            raise HTTPException(
+   646→   646→                status_code=422,
+   647→   647→                detail={"code": "VALIDATION_FAILED", "message": str(exc)},
+   648→   648→            )
+   649→   649→
+   650→   650→    return MessageResponse(message="Password changed. Please log in again on all devices.", code="OK")
+   651→   651→
+   652→   652→
+   653→   653→# ============================================================
+   654→   654→# MFA
+   655→   655→# ============================================================
+   656→   656→
+   657→   657→
+   658→   658→@router.post(
+   659→   659→    "/mfa/setup",
+   660→   660→    response_model=MfaSetupResponse,
+   661→   661→    summary="Initiate MFA setup",
+   662→   662→)
+   663→   663→async def mfa_setup(
+   664→   664→    raw_request: Request,
+   665→   665→    uow = Depends(get_uow),
+   666→   666→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   667→   667→    user_id: UUID = Depends(get_current_user_id),
+   668→   668→) -> MfaSetupResponse:
+   669→   669→    """Initiate MFA setup — generates secret + QR URI + recovery codes.
+   670→   670→
+   671→   671→    The secret is stored as 'pending' until /mfa/enable is called with a valid TOTP code.
+   672→   672→    Recovery codes are returned ONCE — the user must save them.
+   673→   673→    """
+   674→   674→    async with uow as _uow:
+   675→   675→        session = _uow._session  # type: ignore[union-attr]
+   676→   676→        # Get user email
+   677→   677→        from app.infrastructure.database.orm.identity import UserModel
+   678→   678→        from sqlalchemy import select
+   679→   679→        user_model = (await session.execute(
+   680→   680→            select(UserModel).where(UserModel.id == user_id)
+   681→   681→        )).scalar_one_or_none()
+   682→   682→        if user_model is None:
+   683→   683→            raise HTTPException(status_code=404, detail="User not found")
+   684→   684→
+   685→   685→        result = await auth_service.setup_mfa(
+   686→   686→            session=session,
+   687→   687→            user_id=user_id,
+   688→   688→            user_email=user_model.email,
+   689→   689→        )
+   690→   690→        await _uow.commit()
+   691→   691→
+   692→   692→    return MfaSetupResponse(
+   693→   693→        secret=result["secret"],
+   694→   694→        qr_code_uri=result["qr_code_uri"],
+   695→   695→        recovery_codes=result["recovery_codes"],
+   696→   696→    )
+   697→   697→
+   698→   698→
+   699→   699→@router.post(
+   700→   700→    "/mfa/verify",
+   701→   701→    response_model=MessageResponse,
+   702→   702→    summary="Verify a TOTP code",
+   703→   703→)
+   704→   704→async def mfa_verify(
+   705→   705→    request: MfaVerifyRequest,
+   706→   706→    uow = Depends(get_uow),
+   707→   707→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   708→   708→    user_id: UUID = Depends(get_current_user_id),
+   709→   709→) -> MessageResponse:
+   710→   710→    """Verify a TOTP code (e.g., for sensitive actions)."""
+   711→   711→    async with uow as _uow:
+   712→   712→        session = _uow._session  # type: ignore[union-attr]
+   713→   713→        ok = await auth_service.verify_mfa(
+   714→   714→            session=session,
+   715→   715→            user_id=user_id,
+   716→   716→            code=request.code,
+   717→   717→            context=request.context,
+   718→   718→        )
+   719→   719→        await _uow.commit()
+   720→   720→
+   721→   721→    if not ok:
+   722→   722→        raise HTTPException(
+   723→   723→            status_code=401,
+   724→   724→            detail={"code": "INVALID_MFA_CODE", "message": "Invalid or expired TOTP code"},
+   725→   725→        )
+   726→   726→
+   727→   727→    return MessageResponse(message="MFA code verified", code="OK")
+   728→   728→
+   729→   729→
+   730→   730→@router.post(
+   731→   731→    "/mfa/enable",
+   732→   732→    response_model=MessageResponse,
+   733→   733→    summary="Enable MFA (finalize setup)",
+   734→   734→)
+   735→   735→async def mfa_enable(
+   736→   736→    request: MfaEnableRequest,
+   737→   737→    uow = Depends(get_uow),
+   738→   738→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   739→   739→    user_id: UUID = Depends(get_current_user_id),
+   740→   740→) -> MessageResponse:
+   741→   741→    """Finalize MFA setup — verify the first TOTP code and activate the secret."""
+   742→   742→    async with uow as _uow:
+   743→   743→        session = _uow._session  # type: ignore[union-attr]
+   744→   744→        try:
+   745→   745→            await auth_service.enable_mfa(
+   746→   746→                session=session,
+   747→   747→                user_id=user_id,
+   748→   748→                totp_code=request.totp_code,
+   749→   749→                pending_secret=request.pending_secret,
+   750→   750→            )
+   751→   751→            await _uow.commit()
+   752→   752→        except ValueError as exc:
+   753→   753→            raise HTTPException(
+   754→   754→                status_code=422,
+   755→   755→                detail={"code": "MFA_ENABLE_FAILED", "message": str(exc)},
+   756→   756→            )
+   757→   757→
+   758→   758→    return MessageResponse(message="MFA enabled successfully", code="OK")
+   759→   759→
+   760→   760→
+   761→   761→@router.post(
+   762→   762→    "/mfa/disable",
+   763→   763→    response_model=MessageResponse,
+   764→   764→    summary="Disable MFA",
+   765→   765→)
+   766→   766→async def mfa_disable(
+   767→   767→    request: MfaDisableRequest,
+   768→   768→    uow = Depends(get_uow),
+   769→   769→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   770→   770→    user_id: UUID = Depends(get_current_user_id),
+   771→   771→) -> MessageResponse:
+   772→   772→    """Disable MFA — requires current password for verification."""
+   773→   773→    async with uow as _uow:
+   774→   774→        session = _uow._session  # type: ignore[union-attr]
+   775→   775→        try:
+   776→   776→            await auth_service.disable_mfa(
+   777→   777→                session=session,
+   778→   778→                user_id=user_id,
+   779→   779→                password=request.password,
+   780→   780→            )
+   781→   781→            await _uow.commit()
+   782→   782→        except ValueError as exc:
+   783→   783→            raise HTTPException(
+   784→   784→                status_code=422,
+   785→   785→                detail={"code": "MFA_DISABLE_FAILED", "message": str(exc)},
+   786→   786→            )
+   787→   787→
+   788→   788→    return MessageResponse(message="MFA disabled", code="OK")
+   789→   789→
+   790→   790→
+   791→   791→@router.post(
+   792→   792→    "/mfa/recovery",
+   793→   793→    response_model=MessageResponse,
+   794→   794→    summary="Use a recovery code",
+   795→   795→)
+   796→   796→async def mfa_recovery(
+   797→   797→    request: MfaRecoveryRequest,
+   798→   798→    raw_request: Request,
+   799→   799→    uow = Depends(get_uow),
+   800→   800→    auth_service: ProductionAuthService = Depends(get_auth_service),
+   801→   801→    user_id: UUID = Depends(get_current_user_id),
+   802→   802→) -> MessageResponse:
+   803→   803→    """Use a recovery code (one-time use)."""
+   804→   804→    ip = get_request_ip(raw_request)
+   805→   805→
+   806→   806→    async with uow as _uow:
+   807→   807→        session = _uow._session  # type: ignore[union-attr]
+   808→   808→        ok, remaining = await auth_service.use_recovery_code(
+   809→   809→            session=session,
+   810→   810→            user_id=user_id,
+   811→   811→            recovery_code=request.recovery_code,
+   812→   812→            ip_address=ip,
+   813→   813→        )
+   814→   814→        await _uow.commit()
+   815→   815→
+   816→   816→    if not ok:
+   817→   817→        raise HTTPException(
+   818→   818→            status_code=401,
+   819→   819→            detail={"code": "INVALID_RECOVERY_CODE", "message": "Invalid or already used recovery code"},
+   820→   820→        )
+   821→   821→
+   822→   822→    return MessageResponse(
+   823→   823→        message=f"Recovery code used. {remaining} codes remaining.",
+   824→   824→        code="OK",
+   825→   825→    )
+   826→   826→
+   827→   827→
+   828→   828→__all__ = ["router"]
+   829→   829→
