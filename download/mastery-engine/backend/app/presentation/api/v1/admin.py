@@ -40,6 +40,12 @@ from app.infrastructure.database.repositories.background import (
 from app.presentation.dependencies import (
     get_uow,
     get_session_factory,
+    get_current_user_id,
+    require_any_role,
+)
+from app.infrastructure.security.authorization import (
+    ROLE_ADMINISTRATOR,
+    ROLE_SYSTEM_ADMIN,
 )
 from app.shared.logging import get_logger
 from app.workers.host import HeartbeatService
@@ -48,7 +54,14 @@ from app.workers.outbox_dispatcher import OutboxDispatcherProcessor, get_outbox_
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin/bg", tags=["Admin — Background Processing"])
+router = APIRouter(
+    prefix="/admin/bg",
+    tags=["Admin — Background Processing"],
+    dependencies=[
+        Depends(get_current_user_id),
+        Depends(require_any_role(ROLE_ADMINISTRATOR, ROLE_SYSTEM_ADMIN)),
+    ],
+)
 
 
 # ============================================================

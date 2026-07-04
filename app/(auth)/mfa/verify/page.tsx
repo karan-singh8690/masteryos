@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -19,14 +19,22 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/forms/form'
-import { authApi, ApiError } from '@/lib/api-client'
+import { authApi, ApiError, tokenStorage } from '@/lib/api-client'
 import { mfaVerifySchema, type MfaVerifyFormData } from '@/lib/validations'
 import { ROUTES } from '@/lib/constants'
+import { useAuth } from '@/providers/auth-provider'
 import { toast } from 'sonner'
 
 export default function MfaVerifyPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { setUser } = useAuth()
   const [error, setError] = React.useState<string | null>(null)
+
+  // Get MFA session token + redirect from URL (set by login page)
+  const mfaSessionToken = searchParams.get('mfa_session_token') || ''
+  const redirect = searchParams.get('redirect') || ROUTES.DASHBOARD
+  const isLoginChallenge = !!mfaSessionToken
 
   const form = useForm<MfaVerifyFormData>({
     resolver: zodResolver(mfaVerifySchema),
@@ -36,9 +44,42 @@ export default function MfaVerifyPage() {
   const onSubmit = async (data: MfaVerifyFormData) => {
     setError(null)
     try {
-      await authApi.mfaVerify(data.code, 'sensitive_action')
-      toast.success('MFA code verified!')
-      router.push(ROUTES.DASHBOARD)
+      if (isLoginChallenge) {
+        // Login MFA challenge: re-POST /auth/login with mfa_code + mfa_session_token
+        const response = await authApi.login({
+          email: '', // not needed — mfa_session_token identifies the session
+          password: '',
+          mfa_session_token: mfaSessionToken,
+          mfa_code: data.code,
+        } as any)
+
+        tokenStorage.setAccessToken(response.access_token)
+        if (response.refresh_token) {
+          tokenStorage.setRefreshToken(response.refresh_token)
+        }
+        document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
+
+        // Fetch user role for middleware
+        try {
+          const me = await authApi.me()
+          if (me.roles?.length) {
+            document.cookie = `mastery-role=${me.roles[0]}; path=/; SameSite=Strict`
+            setUser(me)
+          } else {
+            setUser(response.user)
+          }
+        } catch {
+          setUser(response.user)
+        }
+
+        toast.success('MFA verified! Welcome back.')
+        router.push(redirect)
+      } else {
+        // Sensitive action MFA (user already authenticated) — use /auth/mfa/verify
+        await authApi.mfaVerify(data.code, 'sensitive_action')
+        toast.success('MFA code verified!')
+        router.push(ROUTES.DASHBOARD)
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message)
@@ -53,9 +94,15 @@ export default function MfaVerifyPage() {
       title="MFA verification"
       description="Enter the 6-digit code from your authenticator app"
       footer={
-        <Link href={ROUTES.RECOVERY_CODES} className="text-primary hover:underline">
-          Use a recovery code instead
-        </Link>
+        isLoginChallenge ? (
+          <Link href={ROUTES.RECOVERY_CODES + '?mfa_session_token=' + mfaSessionToken} className="text-primary hover:underline">
+            Use a recovery code instead
+          </Link>
+        ) : (
+          <Link href={ROUTES.RECOVERY_CODES} className="text-primary hover:underline">
+            Use a recovery code instead
+          </Link>
+        )
       }
     >
       <Form {...form}>

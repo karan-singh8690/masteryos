@@ -41,9 +41,27 @@ from app.infrastructure.database.orm.content import (
     TemplateConceptModel,
     TemplateVersionModel,
 )
-from app.presentation.dependencies import get_current_user_id, get_uow
+from app.presentation.dependencies import get_current_user_id, get_uow, require_any_role
+from app.infrastructure.security.authorization import (
+    ROLE_ADMINISTRATOR,
+    ROLE_SYSTEM_ADMIN,
+    ROLE_CONTENT_EDITOR,
+    ROLE_INSTRUCTOR,
+)
 
-router = APIRouter(prefix="/admin", tags=["Content Administration"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Content Administration"],
+    dependencies=[
+        Depends(get_current_user_id),
+        Depends(require_any_role(
+            ROLE_ADMINISTRATOR,
+            ROLE_SYSTEM_ADMIN,
+            ROLE_CONTENT_EDITOR,
+            ROLE_INSTRUCTOR,
+        )),
+    ],
+)
 
 
 # ============================================================

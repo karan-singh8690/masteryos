@@ -34,7 +34,7 @@ from app.workers.processors import (
     EmailProcessor,
     NotificationProcessor,
 )
-from app.workers.scheduler import SchedulerProcessor
+from app.infrastructure.scheduler import SchedulerProcessor
 from app.workers.subscriber_registry import (
     SubscriberRegistry,
     USER_REGISTERED,

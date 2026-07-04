@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 
-import { Providers } from '@/providers'
+import { ProductionProviders } from '@/providers/production-providers'
 import { APP_NAME } from '@/lib/constants'
 import '@/styles/globals.css'
 
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
       'Adaptive learning platform with measurable mastery tracking. Master Python interviews with AI-powered explanations and spaced repetition.',
     images: [
       {
-        url: '/brand/og-image.svg',
+        url: '/brand/og-image.png',
         width: 1200,
         height: 630,
         alt: 'MasteryOS — The Operating System for Learning',
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
     title: 'MasteryOS — The Operating System for Learning',
     description:
       'Adaptive learning platform with measurable mastery tracking. Master Python interviews with AI-powered explanations and spaced repetition.',
-    images: ['/brand/og-image.svg'],
+    images: ['/brand/og-image.png'],
     creator: '@masteryos',
   },
   robots: {
@@ -80,9 +80,12 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      { url: '/brand/logo-mark.svg', type: 'image/svg+xml' },
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
     ],
   },
 }
@@ -100,7 +103,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen bg-background text-foreground antialiased`}>
-        <Providers>{children}</Providers>
+        <ProductionProviders>{children}</ProductionProviders>
       </body>
     </html>
   )

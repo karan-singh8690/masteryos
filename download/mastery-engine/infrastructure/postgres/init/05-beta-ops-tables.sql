@@ -169,10 +169,18 @@ CREATE INDEX IF NOT EXISTS idx_experiment_results_exp
 -- ============================================================
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity TO mastery;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA administration TO mastery;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA analytics TO mastery;
+-- Explicit per-table grants for analytics schema (NOT ALL TABLES)
+-- to preserve append-only invariant on analytics.beta_events
+GRANT SELECT, INSERT, UPDATE, DELETE ON analytics.experiments TO mastery;
+GRANT SELECT, INSERT, UPDATE, DELETE ON analytics.experiment_assignments TO mastery;
+GRANT SELECT, INSERT, UPDATE, DELETE ON analytics.experiment_results TO mastery;
+-- analytics.beta_events: keep SELECT + INSERT only (append-only, set in 04-beta-tables.sql)
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity TO mastery;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA administration TO mastery;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA analytics TO mastery;
+
+-- Re-enforce append-only on beta_events AFTER any broad grants
+REVOKE UPDATE, DELETE ON analytics.beta_events FROM mastery;
 
 DO $$
 BEGIN

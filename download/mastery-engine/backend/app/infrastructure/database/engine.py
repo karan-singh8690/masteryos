@@ -26,6 +26,19 @@ from sqlalchemy.pool import AsyncAdaptedQueuePool
 from app.shared.config import get_settings
 from app.shared.logging import get_logger
 
+# Import Base + all ORM models so create_all() can detect them
+from app.infrastructure.database.orm.base import Base  # noqa: E402
+# Import all ORM modules to populate Base.metadata
+from app.infrastructure.database.orm import (  # noqa: E402, F401
+    identity,
+    auth,
+    background,
+    beta,
+    beta_ops,
+    core,
+    content,
+)
+
 logger = get_logger(__name__)
 
 # Module-level engine and session factory
@@ -131,8 +144,26 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_database() -> None:
-    """Initialize database connections. Called at application startup."""
-    await get_engine()
+    """Initialize database connections. Called at application startup.
+
+    Also creates any missing tables as a safety net (in addition to Alembic
+    migrations and SQL init scripts). This ensures all ORM models have
+    corresponding tables even if a migration was not generated.
+    """
+    global _engine, _session_factory
+    _engine = await get_engine()
+    _session_factory = await get_session_factory()
+
+    # Safety net: create any tables that don't exist yet.
+    # In production, Alembic migrations should be the source of truth,
+    # but this ensures the app can boot even if migrations are incomplete.
+    try:
+        async with _engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("database_tables_verified")
+    except Exception as exc:
+        logger.warning("database_table_creation_skipped", error=str(exc))
+
     logger.info("database_initialized")
 
 

@@ -16,16 +16,16 @@ export interface User {
   id: UUID
   email: EmailAddress
   status: UserStatus
-  mfaEnabled: boolean
-  emailVerifiedAt: ISO8601 | null
-  createdAt: ISO8601
+  mfa_enabled: boolean
+  email_verified_at: ISO8601 | null
+  created_at: ISO8601
 }
 
 export interface UserProfile {
-  displayName: string
+  display_name: string
   timezone: string
   locale: string
-  avatarUrl: string | null
+  avatar_url: string | null
   preferences: Record<string, unknown>
 }
 
@@ -43,32 +43,34 @@ export interface AuthTokens {
 }
 
 export interface AuthResponse {
-  accessToken: string
-  refreshToken: string | null
-  expiresIn: number
-  tokenType: string
+  access_token: string
+  refresh_token: string | null
+  expires_in: number
+  token_type: string
   user: User
-  requiresMfa?: boolean
-  mfaSessionToken?: string
+  requires_mfa?: boolean
+  mfa_session_token?: string
 }
 
 export interface LoginRequest {
   email: EmailAddress
   password: string
-  mfaCode?: string
-  recoveryCode?: string
+  mfa_code?: string
+  mfa_session_token?: string
+  recovery_code?: string
 }
 
 export interface RegisterRequest {
   email: EmailAddress
   password: string
-  displayName: string
+  display_name: string
+  invite_token?: string
   timezone?: string
   locale?: string
 }
 
 export interface RefreshRequest {
-  refreshToken: string
+  refresh_token: string
 }
 
 export interface VerifyEmailRequest {
@@ -81,12 +83,12 @@ export interface ForgotPasswordRequest {
 
 export interface ResetPasswordRequest {
   token: string
-  newPassword: string
+  new_password: string
 }
 
 export interface ChangePasswordRequest {
-  currentPassword: string
-  newPassword: string
+  current_password: string
+  new_password: string
 }
 
 export interface MfaSetupResponse {

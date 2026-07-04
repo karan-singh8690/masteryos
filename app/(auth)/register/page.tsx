@@ -35,6 +35,7 @@ export default function RegisterPage() {
   const [password, setPassword] = React.useState('')
 
   const redirect = searchParams.get('redirect') || ROUTES.DASHBOARD
+  const inviteToken = searchParams.get('invite_token') || ''
 
   const form = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
@@ -53,12 +54,15 @@ export default function RegisterPage() {
       const response = await authApi.register({
         email: data.email,
         password: data.password,
-        displayName: data.displayName,
+        display_name: data.displayName,
+        invite_token: inviteToken || undefined,
       })
-      tokenStorage.setAccessToken(response.accessToken)
-      if (response.refreshToken) {
-        tokenStorage.setRefreshToken(response.refreshToken)
+      tokenStorage.setAccessToken(response.access_token)
+      if (response.refresh_token) {
+        tokenStorage.setRefreshToken(response.refresh_token)
       }
+      // Set auth cookie for middleware
+      document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
       setUser(response.user)
       toast.success('Account created! Please verify your email.')
       router.push(ROUTES.VERIFY_EMAIL)

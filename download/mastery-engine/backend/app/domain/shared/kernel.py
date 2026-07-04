@@ -41,6 +41,35 @@ class ValueObject:
     """
 
 
+@dataclass(frozen=True)
+class Email(ValueObject):
+    """Email value object with validation and normalization.
+
+    Emails are lowercased and stripped on construction.
+    Two Email values are equal if their normalized strings match.
+    """
+
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.value or "@" not in self.value:
+            raise ValueError(f"Invalid email address: {self.value!r}")
+        # Normalize: lowercase + strip
+        normalized = self.value.strip().lower()
+        object.__setattr__(self, "value", normalized)
+
+    @classmethod
+    def from_string(cls, email: str) -> "Email":
+        """Create an Email from a raw string."""
+        return cls(email)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"Email({self.value!r})"
+
+
 class Entity:
     """Base class for all entities.
 

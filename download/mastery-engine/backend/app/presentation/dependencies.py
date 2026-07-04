@@ -123,11 +123,18 @@ def get_password_service() -> PasswordService:
 
 @lru_cache
 def get_jwt_service() -> JWTService:
-    """Provide the RS256 JWT service (singleton)."""
+    """Provide the RS256 JWT service (singleton).
+
+    Loads RSA keys from JWT_KEYS_DIR if set; falls back to ephemeral
+    development keys only when no key directory is configured.
+    """
     settings = get_settings()
+    from app.infrastructure.security.jwt_service import JWTKeyManager
+    key_manager = JWTKeyManager(keys_dir=settings.jwt_keys_dir) if settings.jwt_keys_dir else None
     return JWTService(
         issuer=settings.jwt_issuer,
         audience=settings.jwt_audience,
+        key_manager=key_manager,
     )
 
 

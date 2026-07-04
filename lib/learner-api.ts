@@ -106,7 +106,7 @@ export const questionApi = {
 // ============================================================
 
 export const dashboardApi = {
-  get: () => apiClient.get<DashboardData>('/dashboard'),
+  get: () => apiClient.get<DashboardData>('/questions/dashboard'),
 }
 
 // ============================================================

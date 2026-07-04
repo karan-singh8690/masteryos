@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,31 +9,54 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Mail, Lock } from 'lucide-react'
+import { authApi, ApiError, tokenStorage } from '@/lib/api-client'
+import { useAuth, MfaRequiredError } from '@/providers/auth-provider'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { login, setUser } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const redirect = searchParams.get('redirect') || '/dashboard'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail?.message || data.detail || 'Login failed')
-      localStorage.setItem('mastery-token', data.access_token)
-      document.cookie = 'mastery-authenticated=true; path=/'
-      router.push('/dashboard')
+      // Use the typed API client + AuthProvider login
+      await login(email, password)
+
+      // Set auth cookie for middleware (presence check)
+      document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
+
+      // Fetch user to get role, then set role cookie for middleware admin check
+      try {
+        const me = await authApi.me()
+        if (me.roles?.length) {
+          document.cookie = `mastery-role=${me.roles[0]}; path=/; SameSite=Strict`
+          setUser(me)
+        }
+      } catch {
+        // Role fetch failed — non-fatal, user can still access non-admin routes
+      }
+
+      router.push(redirect)
     } catch (err: any) {
-      setError(err.message)
+      if (err instanceof MfaRequiredError) {
+        // Redirect to MFA verify with session token
+        const params = new URLSearchParams({
+          mfa_session_token: err.mfaSessionToken,
+          redirect,
+        })
+        router.push(`/mfa/verify?${params}`)
+        return
+      }
+      setError(err instanceof ApiError ? err.message : 'Login failed')
     } finally {
       setLoading(false)
     }

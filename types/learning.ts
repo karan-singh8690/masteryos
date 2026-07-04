@@ -230,8 +230,8 @@ export interface SubmitAnswerResponse {
 export interface DashboardData {
   enrollment_id: UUID | null
   recommended_action: string
-  current_streak: int
-  longest_streak: int
+  current_streak: number
+  longest_streak: number
   weak_concepts: MasteryScore[]
   strong_concepts: MasteryScore[]
   today_reviews: number
@@ -246,22 +246,6 @@ export interface TrendPoint {
   date: string
   value: number
   label?: string
-}
-
-// Fix: int doesn't exist in TS, use number
-export interface DashboardData {
-  enrollment_id: UUID | null
-  recommended_action: string
-  current_streak: number
-  longest_streak: number
-  weak_concepts: MasteryScore[]
-  strong_concepts: MasteryScore[]
-  today_reviews: number
-  today_queue_remaining: number
-  daily_progress: number
-  interview_readiness: number
-  memory_trend: TrendPoint[]
-  mastery_trend: TrendPoint[]
 }
 
 // ============================================================

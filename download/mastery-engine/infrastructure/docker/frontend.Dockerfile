@@ -71,8 +71,8 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Health check — uses curl (installed above) for parity with docker-compose healthchecks
+# Health check — frontend root route
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
-    CMD curl -sf http://localhost:3000/api/v1/health || exit 1
+    CMD curl -sf http://localhost:3000/ || exit 1
 
 CMD ["node", "server.js"]

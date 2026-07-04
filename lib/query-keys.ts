@@ -56,8 +56,8 @@ export const queryKey = {
     reviews: (enrollmentId: UUID) => ['mastery', 'reviews', enrollmentId] as const,
   },
 
-  // Content
-  content: {
+  // Content (learner-facing reads)
+  learnerContent: {
     all: ['content'] as const,
     subjects: () => ['content', 'subjects'] as const,
     concepts: (subjectId: UUID) => ['content', 'subjects', subjectId, 'concepts'] as const,

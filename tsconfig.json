@@ -38,9 +38,6 @@
       "@/components/*": [
         "./components/*"
       ],
-      "@/features/*": [
-        "./features/*"
-      ],
       "@/lib/*": [
         "./lib/*"
       ],
@@ -66,6 +63,14 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "download",
+    "tests",
+    "examples",
+    "tool-results",
+    "mini-services",
+    "db",
+    "prisma",
+    "upload"
   ]
 }

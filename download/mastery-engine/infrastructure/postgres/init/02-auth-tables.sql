@@ -206,9 +206,8 @@ CREATE TRIGGER trg_audit_logs_no_delete
     BEFORE DELETE ON identity.auth_audit_logs
     FOR EACH ROW EXECUTE FUNCTION identity.prevent_audit_log_mutation();
 
--- Revoke UPDATE and DELETE from the application role.
--- (The application only needs INSERT and SELECT on audit logs.)
-REVOKE UPDATE, DELETE ON identity.auth_audit_logs FROM mastery;
+-- NOTE: REVOKE for auth_audit_logs moved to END of file (after all GRANTs)
+-- to prevent GRANT-after-REVOKE bug.
 
 -- ============================================================
 -- Add token_version column to users (for invalidating all tokens
@@ -251,6 +250,10 @@ END $$;
 -- Grant privileges
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity TO mastery;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity TO mastery;
+
+-- Re-enforce immutability of auth_audit_logs AFTER broad GRANT
+-- (must come AFTER GRANT to not be undone)
+REVOKE UPDATE, DELETE ON identity.auth_audit_logs FROM mastery;
 
 DO $$
 BEGIN
