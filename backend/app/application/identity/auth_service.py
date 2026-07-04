@@ -249,6 +249,9 @@ class ProductionAuthService:
             mfa_enabled=False,
         )
         session.add(user_model)
+        # Flush to INSERT the user row immediately so foreign key constraints
+        # on verification_tokens, user_credentials, etc. can be satisfied.
+        await session.flush()
 
         # Create profile
         profile_model = UserProfileModel(
@@ -267,6 +270,7 @@ class ProductionAuthService:
             password_hash=password_hash,
         )
         session.add(credential_model)
+        await session.flush()
 
         # Create verification token
         raw_verification_token = secrets.token_urlsafe(32)
