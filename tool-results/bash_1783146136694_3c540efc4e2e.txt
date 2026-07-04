@@ -1,0 +1,800 @@
+=== app/(learner)/settings/security/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Shield, Smartphone, Monitor, Key, Lock } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { AppLayout } from '@/components/layout/app-layout'
+import { ProtectedRoute } from '@/components/layout/route-protection'
+import { Button } from '@/components/ui/button'
+import { PasswordInput } from '@/components/ui/input'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/forms/form'
+import { useAuth } from '@/providers/auth-provider'
+import { authApi, userApi, ApiError } from '@/lib/api-client'
+import { queryKey } from '@/lib/query-keys'
+import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/validations'
+import { formatRelativeTime, formatDateTime } from '@/lib/format'
+
+=== app/(learner)/study/[sessionId]/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import {
+  GraduationCap,
+  Lightbulb,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  ChevronRight,
+  Pause,
+  Play,
+  X,
+} from 'lucide-react'
+import { toast } from 'sonner'
+
+import { useAdaptiveQueue, useQuestion, useSubmitAnswer, useEndSession, useAbandonSession } from '@/hooks/use-learner'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
+import { Skeleton } from '@/components/ui/skeleton'
+import { CenteredSpinner } from '@/components/ui/spinner'
+import {
+  QuestionRenderer,
+  ConfidenceSlider,
+  SessionTimer,
+  QuestionProgress,
+
+=== app/(learner)/study/[sessionId]/summary/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import {
+  CheckCircle2,
+  Clock,
+  TrendingUp,
+  Target,
+  Award,
+  ArrowRight,
+  Home,
+} from 'lucide-react'
+
+import { useSessionSummary } from '@/hooks/use-learner'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { CenteredSpinner } from '@/components/ui/spinner'
+import { EmptyState } from '@/components/ui/empty-state'
+import { formatDuration } from '@/lib/format'
+import { MasteryDonut } from '@/components/charts'
+
+export default function SessionSummaryPage() {
+  const params = useParams()
+  const router = useRouter()
+  const sessionId = params.sessionId as string
+
+
+=== app/(learner)/study/start/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { GraduationCap, Clock, Target } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { useEnrollments, useStartStudySession } from '@/hooks/use-learner'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { EmptyState } from '@/components/ui/empty-state'
+import { cn } from '@/lib/cn'
+
+const SESSION_INTENTS = [
+  {
+    value: 'mixed' as const,
+    label: 'Mixed practice',
+    description: 'A balanced mix of new concepts and reviews',
+    icon: Target,
+  },
+  {
+    value: 'review' as const,
+    label: 'Review session',
+    description: 'Focus on due reviews and spaced repetition',
+    icon: Clock,
+  },
+  {
+
+=== app/(learner)/subjects/[subjectId]/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft, BookOpen, Clock, GraduationCap, CheckCircle2 } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { useSubject, useSubjectConcepts, useEnrollments, useEnroll } from '@/hooks/use-learner'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Progress } from '@/components/ui/progress'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ErrorState } from '@/components/ui/error-state'
+
+export default function SubjectDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const subjectId = params.subjectId as string
+
+  const { data: subject, isLoading, isError, refetch } = useSubject(subjectId)
+  const { data: concepts } = useSubjectConcepts(subjectId)
+  const { data: enrollments } = useEnrollments()
+  const enrollMutation = useEnroll()
+
+  const enrollment = React.useMemo(() => {
+    return (enrollments || []).find((e) => e.subject_id === subjectId)
+  }, [enrollments, subjectId])
+
+=== app/(learner)/subjects/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import Link from 'next/link'
+import { Search, BookOpen, Clock, ChevronRight } from 'lucide-react'
+
+import { useSubjects, useEnrollments } from '@/hooks/use-learner'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { EmptyState } from '@/components/ui/empty-state'
+import { useDebounce } from '@/hooks/use-debounce'
+
+export default function SubjectsPage() {
+  const { data: subjects, isLoading } = useSubjects()
+  const { data: enrollments } = useEnrollments()
+  const [search, setSearch] = React.useState('')
+  const debouncedSearch = useDebounce(search, 300)
+
+  const enrolledSubjectIds = React.useMemo(() => {
+    return new Set((enrollments || []).map((e) => e.subject_id))
+  }, [enrollments])
+
+  const filtered = React.useMemo(() => {
+    if (!subjects) return []
+    const published = subjects.filter((s) => s.status === 'published')
+    if (!debouncedSearch) return published
+    const q = debouncedSearch.toLowerCase()
+
+=== app/(learner)/welcome/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { useRouter } from 'next/navigation'
+import { Check, ChevronRight, User, Target, BookOpen, GraduationCap } from 'lucide-react'
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Progress } from '@/components/ui/progress'
+import { cn } from '@/lib/cn'
+
+const STEPS = [
+  { id: 0, label: 'Profile', icon: User },
+  { id: 1, label: 'Learning Goal', icon: Target },
+  { id: 2, label: 'Subject', icon: BookOpen },
+  { id: 3, label: 'Tutorial', icon: GraduationCap },
+]
+
+const TIMEZONES = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Calcutta']
+
+export default function WelcomePage() {
+  const router = useRouter()
+  const [step, setStep] = React.useState(0)
+  const [displayName, setDisplayName] = React.useState('')
+  const [timezone, setTimezone] = React.useState('UTC')
+  const [dailyGoal, setDailyGoal] = React.useState('10')
+  const [subject, setSubject] = React.useState('')
+
+=== app/(marketing)/about/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Target, Users, Zap, Heart } from 'lucide-react'
+
+const VALUES = [
+  { icon: Target, title: 'Mastery over memorization', desc: 'We measure durable understanding, not time spent or questions completed.' },
+  { icon: Users, title: 'Learner-first', desc: 'Every decision starts with "does this help the learner?"' },
+  { icon: Zap, title: 'Adaptive by default', desc: 'No two learners are the same. Our platform adapts to each one.' },
+  { icon: Heart, title: 'Open and honest', desc: 'We share our roadmap, changelog, and metrics publicly.' },
+]
+
+const TIMELINE = [
+  { year: '2025', title: 'Inception', desc: 'Started as a research project on adaptive learning algorithms.' },
+  { year: '2026', title: 'Closed Beta', desc: 'Launched with 20 invited users for Python interview preparation.' },
+  { year: '2026', title: 'Public Beta', desc: 'Opening the platform to 100+ users with expanded content.' },
+  { year: '2027', title: 'General Availability', desc: 'Full public launch with multi-subject support.' },
+]
+
+export default function AboutPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-3xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">About MasteryOS</h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          We are building the operating system for learning — a platform that determines
+          the single highest-value learning activity for every user based on measurable mastery.
+        </p>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {VALUES.map((v) => {
+
+=== app/(marketing)/blog/[slug]/page.tsx ===
+'use client'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Calendar, Clock, User, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+
+export default function BlogPostPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto max-w-3xl">
+        <Button variant="ghost" asChild className="mb-6">
+          <Link href="/blog"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog</Link>
+        </Button>
+        <Badge variant="secondary" className="mb-4">Engineering</Badge>
+        <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
+          Building an Adaptive Learning Engine
+        </h1>
+        <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1"><User className="h-4 w-4" /> Engineering Team</span>
+          <span className="flex items-center gap-1"><Calendar className="h-4 w-4" /> 2026-07-01</span>
+          <span className="flex items-center gap-1"><Clock className="h-4 w-4" /> 8 min read</span>
+        </div>
+        <div className="mt-8 space-y-6 text-lg leading-relaxed text-muted-foreground">
+          <p>
+            When we started building MasteryOS, we had one core question: how do you determine
+            the single highest-value learning activity for each user at any given moment?
+          </p>
+          <p>
+            Most learning platforms use a simple approach: linear progression through a
+
+=== app/(marketing)/blog/category/[category]/page.tsx ===
+'use client'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Calendar, Clock, User, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { useParams } from 'next/navigation'
+
+const POSTS = [
+  { slug: 'building-adaptive-learning-engine', title: 'Building an Adaptive Learning Engine', excerpt: 'How we designed a deterministic recommendation algorithm.', category: 'Engineering', date: '2026-07-01', author: 'Engineering Team', readTime: '8 min' },
+  { slug: 'mastery-vs-memory', title: 'Mastery vs Memory', excerpt: 'The difference between finishing a course and mastering the material.', category: 'Learning Science', date: '2026-06-28', author: 'Product Team', readTime: '6 min' },
+  { slug: 'ai-explanations-safety', title: 'AI Explanations: Safety First', excerpt: 'Our approach to AI-generated content safety.', category: 'AI', date: '2026-06-25', author: 'AI Team', readTime: '7 min' },
+]
+
+export default function BlogCategoryPage() {
+  const params = useParams()
+  const category = decodeURIComponent(params.category as string)
+  const filtered = POSTS.filter((p) => p.category.toLowerCase() === category.toLowerCase())
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <Button variant="ghost" asChild className="mb-6">
+        <Link href="/blog"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Blog</Link>
+      </Button>
+      <h1 className="mb-8 text-4xl font-extrabold tracking-tight capitalize">{category}</h1>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {filtered.length > 0 ? filtered.map((post) => (
+          <Card key={post.slug} className="cursor-pointer hover:shadow-lg">
+            <CardContent className="pt-6">
+              <Badge variant="secondary" className="mb-3">{post.category}</Badge>
+              <h2 className="text-lg font-bold">{post.title}</h2>
+
+=== app/(marketing)/blog/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Calendar, Clock, User } from 'lucide-react'
+
+const POSTS = [
+  { slug: 'building-adaptive-learning-engine', title: 'Building an Adaptive Learning Engine', excerpt: 'How we designed a deterministic recommendation algorithm that picks the single highest-value question for each learner.', category: 'Engineering', date: '2026-07-01', author: 'Engineering Team', readTime: '8 min' },
+  { slug: 'mastery-vs-memory', title: 'Mastery vs Memory: Why Completion Is Not Enough', excerpt: 'The difference between finishing a course and actually mastering the material — and how we measure it.', category: 'Learning Science', date: '2026-06-28', author: 'Product Team', readTime: '6 min' },
+  { slug: 'ai-explanations-safety', title: 'AI Explanations: Safety First, Always', excerpt: 'Our approach to AI-generated content: safety validation, human review, and deterministic fallbacks.', category: 'AI', date: '2026-06-25', author: 'AI Team', readTime: '7 min' },
+  { slug: 'securing-masteryos', title: 'Securing MasteryOS: Our Security Architecture', excerpt: 'Argon2id, RS256 JWT, MFA, RBAC, audit logging — a deep dive into our security stack.', category: 'Security', date: '2026-06-22', author: 'Security Team', readTime: '10 min' },
+  { slug: 'why-we-built-masteryos', title: 'Why We Built MasteryOS', excerpt: 'The origin story: from a research project to a Closed Beta platform.', category: 'Product', date: '2026-06-20', author: 'Founders', readTime: '5 min' },
+  { slug: 'clean-architecture-fastapi', title: 'Clean Architecture with FastAPI: A Practical Guide', excerpt: 'How we structured a 40,000-line FastAPI backend using Clean Architecture + DDD.', category: 'Architecture', date: '2026-06-18', author: 'Engineering Team', readTime: '12 min' },
+  { slug: 'scaling-postgresql-learning-platform', title: 'Scaling PostgreSQL for a Learning Platform', excerpt: 'Schema design, indexing strategy, and query optimization for 57+ tables across 10 schemas.', category: 'Performance', date: '2026-06-15', author: 'Engineering Team', readTime: '9 min' },
+  { slug: 'spaced-repetition-algorithm', title: 'Inside Our Spaced Repetition Algorithm', excerpt: 'The math behind adaptive review scheduling — intervals, priorities, and mastery trajectories.', category: 'Learning Science', date: '2026-06-12', author: 'Product Team', readTime: '8 min' },
+  { slug: 'monitoring-masteryos', title: 'Monitoring MasteryOS: Prometheus, Grafana, and Beyond', excerpt: 'Our observability stack: metrics, logs, traces, and alerts for a production learning platform.', category: 'Engineering', date: '2026-06-10', author: 'DevOps Team', readTime: '7 min' },
+]
+
+const CATEGORIES = ['All', 'Engineering', 'AI', 'Learning Science', 'Security', 'Product', 'Architecture', 'Performance']
+
+export default function BlogPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-12 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Blog</h1>
+        <p className="mt-4 text-lg text-muted-foreground">Insights from the team building MasteryOS.</p>
+      </div>
+      <div className="mb-8 flex flex-wrap justify-center gap-2">
+        {CATEGORIES.map((cat) => (
+          <Badge key={cat} variant={cat === 'All' ? 'default' : 'secondary'} className="cursor-pointer">{cat}</Badge>
+        ))}
+
+=== app/(marketing)/careers/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { MapPin, Briefcase } from 'lucide-react'
+
+const POSITIONS = [
+  { title: 'Senior Backend Engineer (Python/FastAPI)', location: 'Remote', type: 'Full-time', dept: 'Engineering' },
+  { title: 'Frontend Engineer (React/Next.js)', location: 'Remote', type: 'Full-time', dept: 'Engineering' },
+  { title: 'AI/ML Engineer', location: 'Remote', type: 'Full-time', dept: 'AI' },
+  { title: 'DevOps/SRE Engineer', location: 'Remote', type: 'Full-time', dept: 'Infrastructure' },
+  { title: 'Product Designer', location: 'Remote', type: 'Full-time', dept: 'Design' },
+  { title: 'Content Author (Python)', location: 'Remote', type: 'Contract', dept: 'Content' },
+]
+
+const BENEFITS = ['Competitive salary + equity', 'Remote-first culture', 'Flexible hours', 'Health/dental/vision', 'Unlimited PTO', 'Learning budget', 'Conference budget', 'Home office stipend']
+
+export default function CareersPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Careers</h1>
+        <p className="mt-4 text-lg text-muted-foreground">Join us in building the future of learning.</p>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        {BENEFITS.map((b) => (
+          <Card key={b}><CardContent className="pt-6 text-center text-sm font-medium">{b}</CardContent></Card>
+        ))}
+      </div>
+      <div className="mt-16">
+
+=== app/(marketing)/changelog/page.tsx ===
+'use client'
+import { Badge } from '@/components/ui/badge'
+import { Check, Wrench, AlertTriangle } from 'lucide-react'
+
+const RELEASES = [
+  { version: 'v1.1.0', date: '2026-07-15', type: 'minor', features: ['Beta Operations Dashboard with 17 KPIs', 'Registration funnel analytics', 'User Success Center with 8 at-risk signals', 'Experiment platform with statistical significance testing', 'Release management with canary/staged rollout'], fixes: ['Fixed invite email dispatch not being wired', 'Fixed backup script Redis auth issue', 'Fixed Grafana dashboard provisioning format'], breaking: [] },
+  { version: 'v1.0.1', date: '2026-07-03', type: 'patch', features: [], fixes: ['Fixed PostgreSQL SSL cert mounting in production', 'Fixed Nginx SSL cert provisioning script', 'Installed curl in Docker images for healthchecks', 'Resolved database init script ordering', 'Wired Prometheus exporters + Alertmanager', 'Completed SMTP configuration in Settings class', 'Enforced admin RBAC on beta endpoints', 'Fixed CSP headers for Next.js compatibility'], breaking: [] },
+  { version: 'v1.0.0', date: '2026-06-15', type: 'major', features: ['Closed Beta system with invite management', 'Argon2id + RS256 JWT + MFA authentication', 'RBAC with 6 roles and 30+ permissions', 'Background processing (outbox, scheduler, notifications, email)', 'AI platform with provider abstraction (Ollama, OpenAI, Gemini, Anthropic)', 'Content authoring portal with template builder', 'Admin portal with operations dashboard', 'WebSocket real-time updates', 'Offline support with optimistic UI', 'Comprehensive monitoring (Prometheus + Grafana + Sentry)'], fixes: [], breaking: ['Initial public release'] },
+]
+
+const TYPE_COLORS: Record<string, string> = {
+  major: 'bg-purple-600', minor: 'bg-blue-600', patch: 'bg-teal-600', hotfix: 'bg-red-600', beta: 'bg-amber-600',
+}
+
+export default function ChangelogPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Changelog</h1>
+        <p className="mt-4 text-lg text-muted-foreground">What is new in MasteryOS.</p>
+      </div>
+      <div className="mx-auto max-w-3xl space-y-12">
+        {RELEASES.map((rel) => (
+          <div key={rel.version} className="relative border-l-2 border-border pl-8">
+            <div className="absolute -left-[9px] top-0 h-4 w-4 rounded-full border-2 border-background bg-blue-600" />
+            <div className="mb-4 flex items-center gap-3">
+              <h2 className="text-2xl font-bold">{rel.version}</h2>
+              <Badge className={TYPE_COLORS[rel.type]}>{rel.type}</Badge>
+              <span className="text-sm text-muted-foreground">{rel.date}</span>
+            </div>
+
+=== app/(marketing)/contact/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Mail, MessageSquare, MapPin } from 'lucide-react'
+
+export default function ContactPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Contact Us</h1>
+        <p className="mt-4 text-lg text-muted-foreground">We would love to hear from you.</p>
+      </div>
+      <div className="grid gap-8 md:grid-cols-2">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" /> Email</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">General: hello@masteryos.com</p>
+              <p className="text-sm text-muted-foreground">Support: support@masteryos.com</p>
+              <p className="text-sm text-muted-foreground">Sales: sales@masteryos.com</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" /> Response Time</CardTitle></CardHeader>
+            <CardContent><p className="text-sm text-muted-foreground">We respond to all inquiries within 24 hours during business days.</p></CardContent>
+          </Card>
+          <Card>
+
+=== app/(marketing)/features/page.tsx ===
+'use client'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Brain, TrendingUp, Calendar, Sparkles, Zap, BarChart3, Check } from 'lucide-react'
+
+const FEATURES = [
+  { icon: Brain, title: 'Adaptive Learning Engine', desc: 'Our recommendation engine analyzes your mastery scores, learning history, and concept dependencies to serve the single highest-value question at any moment. No wasted time on concepts you already know.', points: ['Deterministic algorithm with AI enhancement', 'Concept dependency graph', 'Difficulty-adaptive question selection', 'Intent-based sessions (drill, diagnostic, review)'] },
+  { icon: TrendingUp, title: 'Mastery Tracking', desc: 'Durable mastery scores measure real understanding, not just completion. Our algorithm tracks evidence count, confidence intervals, and concept state (unseen → novice → developing → proficient → mastered).', points: ['Evidence-based scoring', 'Confidence intervals per concept', 'Concept state machine', 'Algorithm versioning for reproducibility'] },
+  { icon: Calendar, title: 'Spaced Repetition', desc: 'Scientifically-backed review scheduling using the spacing effect. Reviews are scheduled based on your mastery trajectory, with intervals that expand on success and contract on failure.', points: ['Adaptive review intervals', 'Priority-based scheduling', 'Streak tracking', 'Review effectiveness analytics'] },
+  { icon: Sparkles, title: 'AI Explanations', desc: 'Context-aware explanations powered by AI when you need them most. Optional AI layer enhances the deterministic engine without replacing it.', points: ['Provider-agnostic (Ollama, OpenAI, Gemini, Anthropic)', 'Safety-validated outputs', 'Human review pipeline', 'Cost controls and rate limiting'] },
+  { icon: Zap, title: 'Real-time Feedback', desc: 'Instant feedback on every answer with misconception tracking. Know not just whether you got it right, but why you got it wrong.', points: ['Misconception tagging', 'Partial credit for near-misses', 'Hint system with tiered disclosure', 'WebSocket-based real-time updates'] },
+  { icon: BarChart3, title: 'Progress Analytics', desc: 'Detailed insights into your learning velocity, concept mastery distribution, and interview readiness trend. Know exactly where you stand.', points: ['Mastery growth over time', 'Weak/strong concept identification', 'Interview readiness score', 'Cohort comparison'] },
+]
+
+export default function FeaturesPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Features</h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Six core features that work together to accelerate your learning.
+        </p>
+      </div>
+      <div className="space-y-16">
+        {FEATURES.map((feature, i) => {
+          const Icon = feature.icon
+          return (
+            <div key={feature.title} className={`grid gap-8 md:grid-cols-2 ${i % 2 === 1 ? 'md:[&>*:first-child]:order-2' : ''}`}>
+              <div>
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600/10">
+                  <Icon className="h-6 w-6 text-blue-600" />
+
+=== app/(marketing)/legal/privacy/page.tsx ===
+'use client'
+export default function PrivacyPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="prose prose-slate mx-auto max-w-3xl dark:prose-invert">
+        <h1>Privacy Policy</h1>
+        <p className="text-muted-foreground">Last updated: July 3, 2026</p>
+        <p>This Privacy Policy describes how Mastery Engine ("we", "us", or "our") collects, uses, and protects your information when you use MasteryOS (the "Service").</p>
+        <h2>Information We Collect</h2>
+        <ul>
+          <li><strong>Account information:</strong> email, display name, password (hashed with Argon2id)</li>
+          <li><strong>Learning data:</strong> study sessions, answers, mastery scores, progress</li>
+          <li><strong>Usage data:</strong> pages visited, features used, device type, browser</li>
+          <li><strong>Communication:</strong> feedback, support tickets, emails you send us</li>
+        </ul>
+        <h2>How We Use Your Information</h2>
+        <ul>
+          <li>To provide and improve the Service</li>
+          <li>To personalize your learning experience</li>
+          <li>To send service notifications and updates</li>
+          <li>To analyze usage patterns and improve our algorithms</li>
+          <li>To prevent fraud and abuse</li>
+        </ul>
+        <h2>Data Security</h2>
+        <p>We use industry-standard security measures including Argon2id password hashing, RS256 JWT authentication, TLS 1.2+ encryption, and encrypted backups. All data is encrypted at rest and in transit.</p>
+        <h2>Your Rights (GDPR)</h2>
+        <ul>
+          <li><strong>Access:</strong> Request a copy of your data</li>
+          <li><strong>Rectification:</strong> Correct inaccurate data</li>
+          <li><strong>Erasure:</strong> Request deletion of your data</li>
+
+=== app/(marketing)/legal/terms/page.tsx ===
+'use client'
+export default function TermsPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="prose prose-slate mx-auto max-w-3xl dark:prose-invert">
+        <h1>Terms of Service</h1>
+        <p className="text-muted-foreground">Last updated: July 3, 2026</p>
+        <p>By using MasteryOS, you agree to these Terms of Service.</p>
+        <h2>1. Acceptance of Terms</h2>
+        <p>By creating an account or using the Service, you agree to be bound by these Terms and our Privacy Policy.</p>
+        <h2>2. Use of the Service</h2>
+        <p>You may use the Service only for lawful purposes. You must not misuse the Service, attempt to bypass security, or use it to violate any law.</p>
+        <h2>3. Account Security</h2>
+        <p>You are responsible for safeguarding your account credentials. Enable MFA for additional security. Notify us immediately of any unauthorized access.</p>
+        <h2>4. Acceptable Use</h2>
+        <ul>
+          <li>Do not share your account credentials</li>
+          <li>Do not attempt to reverse-engineer or scrape the Service</li>
+          <li>Do not use the Service to cheat on interviews or exams</li>
+          <li>Do not upload offensive or illegal content</li>
+        </ul>
+        <h2>5. API Usage</h2>
+        <p>API access is subject to rate limits. Do not abuse the API or attempt to circumvent rate limits. API keys must be kept confidential.</p>
+        <h2>6. Intellectual Property</h2>
+        <p>The Service, including its content, software, and trademarks, is owned by Mastery Engine. Your learning data belongs to you.</p>
+        <h2>7. Termination</h2>
+        <p>You may delete your account at any time. We may suspend or terminate accounts that violate these Terms.</p>
+        <h2>8. Disclaimer</h2>
+        <p>The Service is provided "as is" without warranties of any kind. We do not guarantee that the Service will be available at all times.</p>
+        <h2>9. Limitation of Liability</h2>
+
+=== app/(marketing)/page.tsx ===
+'use client'
+
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import {
+  Brain, TrendingUp, Calendar, Sparkles, Zap, BarChart3,
+  ArrowRight, Check, ChevronDown,
+} from 'lucide-react'
+
+const FEATURES = [
+  { icon: Brain, title: 'Adaptive Learning', desc: 'Personalized question selection based on your mastery level and learning history.' },
+  { icon: TrendingUp, title: 'Mastery Tracking', desc: 'Durable mastery scores that measure real understanding, not just memory.' },
+  { icon: Calendar, title: 'Spaced Repetition', desc: 'Scientifically-backed review scheduling that strengthens long-term retention.' },
+  { icon: Sparkles, title: 'AI Explanations', desc: 'Context-aware explanations powered by AI when you need them most.' },
+  { icon: Zap, title: 'Real-time Feedback', desc: 'Instant feedback on every answer with misconception tracking.' },
+  { icon: BarChart3, title: 'Progress Analytics', desc: 'Detailed insights into your learning velocity and concept mastery.' },
+]
+
+const STEPS = [
+  { num: '01', title: 'Assess', desc: 'Start with a diagnostic session that maps your current knowledge across all concepts.' },
+  { num: '02', title: 'Learn', desc: 'Get adaptive recommendations for the highest-value learning activity at any moment.' },
+  { num: '03', title: 'Master', desc: 'Build durable mastery through spaced repetition and track your progress to interview readiness.' },
+]
+
+const FAQS = [
+  { q: 'What is MasteryOS?', a: 'MasteryOS is an adaptive learning platform that determines the single highest-value learning activity for every user based on measurable mastery. Our first subject is Python interview preparation.' },
+  { q: 'How is this different from other learning platforms?', a: 'Unlike platforms that track completion or time spent, MasteryOS measures durable mastery — your actual understanding of each concept. Our adaptive engine uses this to recommend exactly what to study next.' },
+  { q: 'Is there a free tier?', a: 'Yes! The Free plan includes access to all Python interview prep content, adaptive learning, and mastery tracking. Pro and Team plans add AI explanations, advanced analytics, and team features.' },
+
+=== app/(marketing)/pricing/page.tsx ===
+'use client'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Check, X } from 'lucide-react'
+import Link from 'next/link'
+
+const PLANS = [
+  { name: 'Free', price: '$0', period: 'forever', desc: 'Perfect for self-study', features: ['All Python interview content', 'Adaptive learning engine', 'Mastery tracking', 'Spaced repetition', 'Progress dashboard', 'Community support'], limitations: ['No AI explanations', 'Limited analytics', 'Single device'], cta: 'Get Started', href: '/register' },
+  { name: 'Pro', price: '$19', period: 'per month', desc: 'For serious interview prep', features: ['Everything in Free', 'AI-powered explanations', 'Advanced analytics', 'Interview readiness score', 'Unlimited devices', 'Priority support', 'Custom study plans'], limitations: [], cta: 'Start Pro Trial', href: '/register', popular: true },
+  { name: 'Team', price: '$49', period: 'per month', desc: 'For study groups & teams', features: ['Everything in Pro', 'Team dashboard', 'Shared progress tracking', 'Admin controls', 'SSO/SAML', 'Dedicated support', 'Custom content packs'], limitations: [], cta: 'Contact Sales', href: '/contact' },
+]
+
+const COMPARISON = [
+  { feature: 'Adaptive Learning', free: true, pro: true, team: true },
+  { feature: 'Mastery Tracking', free: true, pro: true, team: true },
+  { feature: 'Spaced Repetition', free: true, pro: true, team: true },
+  { feature: 'AI Explanations', free: false, pro: true, team: true },
+  { feature: 'Advanced Analytics', free: false, pro: true, team: true },
+  { feature: 'Interview Readiness Score', free: false, pro: true, team: true },
+  { feature: 'Team Dashboard', free: false, pro: false, team: true },
+  { feature: 'SSO/SAML', free: false, pro: false, team: true },
+  { feature: 'Custom Content Packs', free: false, pro: false, team: true },
+  { feature: 'Priority Support', free: false, pro: true, team: true },
+]
+
+const FAQS = [
+  { q: 'Can I switch plans anytime?', a: 'Yes. Upgrades take effect immediately. Downgrades take effect at the end of your billing cycle.' },
+  { q: 'Do you offer student discounts?', a: 'Yes! Students get 50% off the Pro plan with a valid .edu email. Contact support for details.' },
+  { q: 'What payment methods do you accept?', a: 'We accept all major credit cards, PayPal, and bank transfers for Team plans.' },
+
+=== app/(marketing)/privacy/page.tsx ===
+import { redirect } from 'next/navigation'
+export default function PrivacyRedirect() {
+  redirect('/legal/privacy')
+}
+
+=== app/(marketing)/roadmap/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ThumbsUp, CheckCircle2, Clock, Lightbulb } from 'lucide-react'
+
+const COLUMNS = [
+  { key: 'planned', title: 'Planned', icon: Lightbulb, items: [
+    { title: 'Multi-subject support', desc: 'Expand beyond Python to JavaScript, Go, Rust, and SQL.', votes: 142 },
+    { title: 'Mobile app (iOS/Android)', desc: 'Native mobile apps with offline support.', votes: 98 },
+    { title: 'Team study rooms', desc: 'Real-time collaborative study sessions.', votes: 67 },
+  ]},
+  { key: 'in_progress', title: 'In Progress', icon: Clock, items: [
+    { title: 'AI Coach', desc: 'Personalized AI study coach with daily plans.', votes: 189 },
+    { title: 'Code execution sandbox', desc: 'Run Python code in-browser during practice.', votes: 134 },
+    { title: 'Interview simulator', desc: 'Mock interviews with AI interviewer.', votes: 112 },
+  ]},
+  { key: 'shipped', title: 'Shipped', icon: CheckCircle2, items: [
+    { title: 'Adaptive learning engine v1', desc: 'Deterministic recommendation algorithm.', votes: 256 },
+    { title: 'Mastery tracking', desc: 'Durable mastery scores with confidence intervals.', votes: 201 },
+    { title: 'Spaced repetition', desc: 'Adaptive review scheduling.', votes: 178 },
+    { title: 'Closed Beta platform', desc: 'Invite system, feedback, analytics.', votes: 156 },
+  ]},
+  { key: 'consideration', title: 'Under Consideration', icon: Lightbulb, items: [
+    { title: 'GitHub integration', desc: 'Import code from repos for practice.', votes: 45 },
+    { title: 'Video explanations', desc: 'Short video clips for key concepts.', votes: 38 },
+  ]},
+]
+
+export default function RoadmapPage() {
+
+=== app/(marketing)/security/page.tsx ===
+'use client'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Shield, Lock, KeyRound, FileCheck, Eye, Server } from 'lucide-react'
+
+const SECURITY_FEATURES = [
+  { icon: KeyRound, title: 'Argon2id Password Hashing', desc: 'OWASP 2024 recommended parameters (19 MB memory, 2 iterations). Resistant to GPU and ASIC attacks.' },
+  { icon: Lock, title: 'RS256 JWT Authentication', desc: 'Asymmetric RSA 4096-bit key pairs. Access tokens (15 min) + refresh tokens (30 days) with family-based rotation reuse detection.' },
+  { icon: Shield, title: 'MFA / TOTP', desc: 'Optional two-factor authentication via authenticator apps (Google Authenticator, 1Password, Authy). 10 one-time recovery codes.' },
+  { icon: FileCheck, title: 'RBAC', desc: 'Role-based access control with 6 roles (learner, instructor, content_editor, organization_admin, administrator, system_admin) and 30+ fine-grained permissions.' },
+  { icon: Eye, title: 'Audit Logging', desc: 'Immutable, append-only audit trail of all authentication events. 22 action types tracked with IP, user agent, and correlation ID.' },
+  { icon: Server, title: 'Rate Limiting', desc: 'Redis-backed sliding-window rate limiting per IP and per user. Configurable per endpoint (auth: 10/min, API: 60/min, AI: 20/min).' },
+]
+
+const COMPLIANCE = [
+  'GDPR Compliant', 'OWASP Top 10 Protected', 'SOC 2 Ready', 'Data Encryption at Rest',
+  'TLS 1.2+ in Transit', 'CSP Headers', 'HSTS Enabled', 'Regular Security Audits',
+]
+
+export default function SecurityPage() {
+  return (
+    <div className="container mx-auto px-4 py-20">
+      <div className="mx-auto mb-16 max-w-2xl text-center">
+        <h1 className="text-4xl font-extrabold tracking-tight">Security</h1>
+        <p className="mt-4 text-lg text-muted-foreground">
+          Enterprise-grade security built in from day one.
+        </p>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {SECURITY_FEATURES.map((f) => {
+          const Icon = f.icon
+
+=== app/(marketing)/terms/page.tsx ===
+import { redirect } from 'next/navigation'
+export default function TermsRedirect() {
+  redirect('/legal/terms')
+}
+
+=== app/admin/analytics/page.tsx ===
+'use client'
+
+import { BarChart3, TrendingUp, Users, Activity, Server, Mail } from 'lucide-react'
+
+import { usePlatformAnalytics } from '@/hooks/use-admin'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ActivityBarChart, TrendChart } from '@/components/charts'
+
+export default function AdminAnalyticsPage() {
+  const { data: analytics, isLoading } = usePlatformAnalytics()
+
+  if (isLoading) return <div className="space-y-6"><Skeleton className="h-8 w-48" /><div className="grid gap-4 md:grid-cols-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}</div></div>
+  if (!analytics) return null
+
+  return (
+    <div className="max-w-4xl space-y-6">
+      <div><h1 className="text-2xl font-bold tracking-tight">Platform Analytics</h1><p className="text-sm text-muted-foreground">Platform-wide metrics and trends</p></div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" />User Growth</CardTitle><CardDescription>New users per day</CardDescription></CardHeader>
+          <CardContent><TrendChart data={analytics.user_growth.map(u => ({ date: u.date, value: u.new_users }))} title="New Users" height={180} /></CardContent>
+        </Card>
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Activity className="h-4 w-4" />Learning Activity</CardTitle><CardDescription>Questions answered per day</CardDescription></CardHeader>
+          <CardContent><ActivityBarChart data={analytics.learning_activity.map(a => ({ label: a.date.slice(5), value: a.questions_answered }))} title="" height={180} /></CardContent>
+        </Card>
+      </div>
+
+      <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="h-4 w-4" />Worker Throughput</CardTitle><CardDescription>Events processed per day</CardDescription></CardHeader>
+        <CardContent><ActivityBarChart data={analytics.worker_throughput.map(w => ({ label: w.date.slice(5), value: w.events_processed }))} title="" height={200} /></CardContent>
+
+=== app/admin/audit/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import { FileText, Download, Search } from 'lucide-react'
+
+import { useAuditLogs } from '@/hooks/use-admin'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { formatDateTime } from '@/lib/format'
+import { useDebounce } from '@/hooks/use-debounce'
+
+export default function AuditLogsPage() {
+  const [search, setSearch] = React.useState('')
+  const [actionFilter, setActionFilter] = React.useState<string>('all')
+  const debouncedSearch = useDebounce(search, 300)
+  const { data: logs, isLoading } = useAuditLogs({
+    action: actionFilter !== 'all' ? actionFilter : undefined,
+    correlation_id: debouncedSearch || undefined,
+  })
+
+  return (
+    <div className="max-w-5xl space-y-6">
+      <div><h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1><p className="text-sm text-muted-foreground">Searchable audit trail</p></div>
+
+      <div className="flex gap-2">
+        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input placeholder="Search by correlation ID..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" aria-label="Search audit logs" /></div>
+
+=== app/admin/beta-ops/experiments/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import {
+  FlaskConical,
+  Plus,
+  Play,
+  Square,
+  UserPlus,
+  BarChart3,
+  CheckCircle2,
+  XCircle,
+  Trophy,
+  Filter,
+} from 'lucide-react'
+import { toast } from 'sonner'
+
+import {
+  useExperiments,
+  useExperiment,
+  useCreateExperiment,
+  useUpdateExperiment,
+  useAssignVariant,
+  useRecordExperimentResult,
+} from '@/hooks/use-beta-ops'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+
+=== app/admin/beta-ops/feedback/page.tsx ===
+'use client'
+
+import * as React from 'react'
+import {
+  Star,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  Pencil,
+  Search,
+  Flame,
+  Layers,
+} from 'lucide-react'
+import { toast } from 'sonner'
+
+import {
+  useFeedbackPlatform,
+  useVoteOnFeedback,
+  useUpdateFeedbackMeta,
