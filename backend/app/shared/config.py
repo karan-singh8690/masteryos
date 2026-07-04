@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, RedisDsn, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -123,6 +123,43 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"],
         description="Allowed CORS origins.",
     )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: object) -> list[str]:
+        """Parse CORS_ORIGINS from env, handling:
+        - JSON array: '["https://example.com"]'
+        - Comma-separated: 'https://a.com,https://b.com'
+        - Single URL: 'https://example.com'
+        - Escaped JSON from Railway: '[\\"https://example.com\\"]'
+        - Already a list (from default_factory)
+        """
+        if v is None:
+            return ["http://localhost:3000", "http://localhost:8000"]
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            # If it looks like JSON array, try parsing
+            if s.startswith("["):
+                import json
+                # Unescape if Railway double-escaped it
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(x) for x in parsed]
+                except json.JSONDecodeError:
+                    # Try unescaping backslashes
+                    try:
+                        unescaped = s.replace('\\"', '"')
+                        parsed = json.loads(unescaped)
+                        if isinstance(parsed, list):
+                            return [str(x) for x in parsed]
+                    except json.JSONDecodeError:
+                        pass
+            # Treat as comma-separated
+            return [origin.strip() for origin in s.split(",") if origin.strip()]
+        return ["http://localhost:3000", "http://localhost:8000"]
 
     # ================================
     # Feature flags
