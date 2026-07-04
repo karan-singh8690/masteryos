@@ -1,0 +1,26 @@
+# Railway Multi-Service Configuration
+# Deploy the entire MasteryOS stack on Railway
+#
+# Usage:
+#   1. Install Railway CLI: npm install -g @railway/cli
+#   2. railway login
+#   3. railway up (from this directory)
+#
+# Or via Railway Dashboard:
+#   1. Go to railway.app → New Project → Deploy from Repo
+#   2. Select your GitHub repo
+#   3. Railway will detect this railway.json and create all services
+
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "cd /app && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT",
+    "healthcheckPath": "/api/v1/health",
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5
+  }
+}

@@ -1,0 +1,153 @@
+# Railway Docker Compose — MasteryOS Full Stack
+#
+# Deploy on Railway:
+#   1. Go to railway.app → New Project → Deploy from Repo
+#   2. Railway detects this docker-compose.yml
+#   3. Each service becomes a Railway service with its own URL
+#   4. Set environment variables in Railway dashboard
+#
+# Cost estimate (free $5 trial credit):
+#   - PostgreSQL: ~$0.02/hour = ~$15/month
+#   - Redis: ~$0.01/hour = ~$7/month
+#   - Backend: ~$0.03/hour = ~$22/month
+#   - Frontend: ~$0.02/hour = ~$15/month
+#   - Worker: ~$0.02/hour = ~$15/month
+#   Total: ~$74/month (free trial covers ~2 days)
+#
+# For free deployment, use Oracle Cloud (always free) instead.
+
+version: '3.9'
+
+services:
+  # ============================================================
+  # PostgreSQL
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-mastery}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME:-mastery_engine}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-mastery}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Redis
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Backend API (FastAPI)
+  # ============================================================
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DATABASE_USER:-mastery}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-mastery_engine}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      JWT_ALGORITHM: RS256
+      JWT_KEYS_DIR: /app/keys
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://masteryos.up.railway.app}
+      ENABLE_DOCS: "false"
+      CLOSED_BETA_ENABLED: ${CLOSED_BETA_ENABLED:-true}
+      MAX_BETA_USERS: ${MAX_BETA_USERS:-20}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@masteryengine.com}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://masteryos.up.railway.app}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AI_ENABLED: ${AI_ENABLED:-false}
+    volumes:
+      - ./keys:/app/keys:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v1/health/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ============================================================
+  # Background Worker
+  # ============================================================
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DATABASE_USER:-mastery}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-mastery_engine}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      SMTP_HOST: ${SMTP_HOST:-localhost}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    command: python -m app.workers.worker_main
+
+  # ============================================================
+  # Frontend (Next.js)
+  # ============================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infrastructure/docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL:-http://backend:8000}
+        NEXT_PUBLIC_APP_NAME: "MasteryOS"
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  postgres_data:
+  redis_data:
