@@ -3,10 +3,13 @@
   "build": {
     "builder": "NIXPACKS",
     "buildCommand": "cd frontend && npm ci && npm run build",
-    "watchPatterns": ["frontend/**", "infrastructure/docker/frontend.Dockerfile"]
+    "watchPatterns": [
+      "frontend/**",
+      "infrastructure/docker/frontend.Dockerfile"
+    ]
   },
   "deploy": {
-    "startCommand": "cd frontend && npm start",
+    "startCommand": "node .next/standalone/server.js",
     "healthcheckPath": "/",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
@@ -20,7 +23,7 @@
         "buildCommand": "cd frontend && npm ci && npm run build"
       },
       "deploy": {
-        "startCommand": "cd frontend && npm start",
+        "startCommand": "node .next/standalone/server.js",
         "healthcheckPath": "/",
         "healthcheckTimeout": 60,
         "restartPolicyType": "ON_FAILURE",
