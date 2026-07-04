@@ -146,19 +146,25 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 async def init_database() -> None:
     """Initialize database connections. Called at application startup.
 
-    Also creates any missing tables as a safety net (in addition to Alembic
-    migrations and SQL init scripts). This ensures all ORM models have
-    corresponding tables even if a migration was not generated.
+    Also creates any missing schemas + tables as a safety net.
     """
     global _engine, _session_factory
     _engine = await get_engine()
     _session_factory = await get_session_factory()
 
-    # Safety net: create any tables that don't exist yet.
-    # In production, Alembic migrations should be the source of truth,
-    # but this ensures the app can boot even if migrations are incomplete.
+    # Safety net: create schemas + any tables that don't exist yet.
     try:
         async with _engine.begin() as conn:
+            # Create all schemas first
+            from sqlalchemy import text
+            schemas = [
+                "identity", "content", "learning", "assessment", "mastery",
+                "scheduling", "administration", "analytics", "billing",
+                "infrastructure",
+            ]
+            for schema in schemas:
+                await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
+            # Then create all tables from ORM models
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_verified")
     except Exception as exc:

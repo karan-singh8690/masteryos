@@ -84,6 +84,7 @@ async def create_tables() -> bool:
     """
     print("[startup] Creating database tables from ORM models...")
     try:
+        from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
         from app.shared.config import get_settings
         from app.infrastructure.database.orm.base import Base
@@ -102,6 +103,19 @@ async def create_tables() -> bool:
         engine = create_async_engine(settings.database_url)
 
         async with engine.begin() as conn:
+            # Step 1: Create all schemas first (before tables reference them)
+            print("[startup] Creating database schemas...")
+            schemas = [
+                "identity", "content", "learning", "assessment", "mastery",
+                "scheduling", "administration", "analytics", "billing",
+                "infrastructure",
+            ]
+            for schema in schemas:
+                await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
+            print(f"[startup] Created {len(schemas)} schemas")
+
+            # Step 2: Create all tables from ORM models
+            print("[startup] Creating tables from ORM models...")
             await conn.run_sync(Base.metadata.create_all)
 
         await engine.dispose()
