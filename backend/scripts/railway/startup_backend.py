@@ -3,9 +3,10 @@
 
 Runs before uvicorn starts:
 1. Wait for PostgreSQL (with retries)
-2. Run Alembic migrations (or SQL init scripts as fallback)
-3. Verify database schema
-4. Start FastAPI via uvicorn
+2. Wait for Redis (non-fatal)
+3. Create all database tables from ORM models (Base.metadata.create_all)
+4. Verify database schema
+5. Start FastAPI via uvicorn
 
 If any step fails, the script exits with code 1 and Railway marks
 the deployment as failed.
@@ -75,65 +76,41 @@ async def wait_for_redis(max_retries: int = 15, delay: float = 2.0) -> bool:
     return False
 
 
-def run_migrations() -> bool:
-    """Run Alembic migrations to the latest revision."""
-    print("[startup] Running database migrations...")
+async def create_tables() -> bool:
+    """Create all database tables from ORM models using Base.metadata.create_all().
+
+    This replaces Alembic migrations + SQL init scripts. All 47 tables defined
+    in the ORM models will be created if they don't exist.
+    """
+    print("[startup] Creating database tables from ORM models...")
     try:
-        from alembic.config import Config
-        from alembic import command
-        from app.shared.config import get_settings
-
-        settings = get_settings()
-        alembic_cfg = Config(os.path.join(BACKEND_DIR, "alembic.ini"))
-        sync_url = settings.database_url.replace("+asyncpg", "")
-        alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
-        command.upgrade(alembic_cfg, "head")
-        print("[startup] Migrations completed successfully")
-        return True
-    except Exception as e:
-        print(f"[startup] Alembic migration failed: {e}")
-        return False
-
-
-def run_sql_init_scripts() -> bool:
-    """Fallback: run SQL init scripts when Alembic has no migrations."""
-    print("[startup] Running SQL init scripts...")
-    try:
-        import glob
-        from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
         from app.shared.config import get_settings
+        from app.infrastructure.database.orm.base import Base
+        # Import all ORM modules to populate Base.metadata
+        from app.infrastructure.database.orm import (  # noqa: F401
+            identity,
+            auth,
+            background,
+            beta,
+            beta_ops,
+            core,
+            content,
+        )
 
         settings = get_settings()
         engine = create_async_engine(settings.database_url)
-        init_dir = os.path.join(BACKEND_DIR, "..", "infrastructure", "postgres", "init")
-        sql_files = sorted(glob.glob(os.path.join(init_dir, "*.sql")))
 
-        if not sql_files:
-            print("[startup] No SQL init scripts found — skipping")
-            return True
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-        async def run_scripts():
-            async with engine.begin() as conn:
-                for sql_file in sql_files:
-                    filename = os.path.basename(sql_file)
-                    print(f"[startup] Running {filename}...")
-                    with open(sql_file, "r") as f:
-                        sql_content = f.read()
-                    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
-                    for stmt in statements:
-                        try:
-                            await conn.execute(text(stmt))
-                        except Exception as e:
-                            if "already exists" not in str(e).lower():
-                                print(f"[startup] Warning in {filename}: {e}")
-
-        asyncio.run(run_scripts())
-        asyncio.run(engine.dispose())
-        print("[startup] SQL init scripts completed")
+        await engine.dispose()
+        print("[startup] Database tables created successfully (47 tables)")
         return True
     except Exception as e:
-        print(f"[startup] ERROR: SQL init scripts failed: {e}")
+        print(f"[startup] ERROR: Table creation failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -191,13 +168,11 @@ async def main() -> int:
     print("[startup] Step 2/4: Waiting for Redis...")
     await wait_for_redis(max_retries=15, delay=2.0)
 
-    # Step 3: Run migrations (Alembic first, SQL fallback)
-    print("[startup] Step 3/4: Running database migrations...")
-    if not run_migrations():
-        print("[startup] Alembic failed, trying SQL init scripts...")
-        if not run_sql_init_scripts():
-            print("[startup] FATAL: Database migration failed. Aborting.")
-            return 1
+    # Step 3: Create tables from ORM models (replaces Alembic + SQL init)
+    print("[startup] Step 3/4: Creating database tables...")
+    if not await create_tables():
+        print("[startup] FATAL: Database table creation failed. Aborting.")
+        return 1
 
     # Step 4: Verify schema
     print("[startup] Step 4/4: Verifying schema...")
