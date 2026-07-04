@@ -103,6 +103,13 @@ class BetaService:
                 UserModel.deleted_at.is_(None)
             )
         )
+
+        # First-admin bypass: if no users exist yet, allow registration without invite.
+        # This lets you create the initial admin account, then invite others.
+        if count is not None and count == 0:
+            logger.info("beta_first_admin_bypass", email=email)
+            return (True, None)
+
         if count is not None and count >= self.max_beta_users:
             return (False, f"Beta user limit reached ({self.max_beta_users}).")
 
