@@ -205,7 +205,6 @@ class ContentPackModel(Base):
     """Atomic publishing unit."""
     __tablename__ = "content_packs"
     __table_args__ = (
-        CheckConstraint("status IN ('draft', 'in_review', 'published', 'rejected')", name="chk_cp_status"),
         {"schema": "content"},
     )
 
