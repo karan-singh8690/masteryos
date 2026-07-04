@@ -1,0 +1,734 @@
+     1→"""AI Provider implementations — Ollama, OpenAI, Gemini, Anthropic, Mock.
+     2→
+     3→All providers implement the AIProvider interface from app/ai/__init__.py.
+     4→No application code depends on any vendor SDK — each provider encapsulates
+     5→its own HTTP client logic.
+     6→"""
+     7→
+     8→from __future__ import annotations
+     9→
+    10→import asyncio
+    11→import json
+    12→import time
+    13→from typing import Any, AsyncGenerator
+    14→
+    15→import httpx
+    16→
+    17→from app.ai import (
+    18→    AIProvider,
+    19→    AIProviderConfig,
+    20→    AIProviderError,
+    21→    AIProviderType,
+    22→    AIRequest,
+    23→    AIResponse,
+    24→    AIStreamChunk,
+    25→    AIRateLimitError,
+    26→    AITimeoutError,
+    27→    SafetyVerdict,
+    28→    TokenUsage,
+    29→    calculate_cost,
+    30→)
+    31→from app.shared.logging import get_logger
+    32→
+    33→logger = get_logger(__name__)
+    34→
+    35→
+    36→# ============================================================
+    37→# Mock Provider (for testing)
+    38→# ============================================================
+    39→
+    40→
+    41→class MockProvider(AIProvider):
+    42→    """Mock AI provider for testing — returns deterministic responses."""
+    43→
+    44→    def __init__(self, config: AIProviderConfig | None = None) -> None:
+    45→        self._config = config or AIProviderConfig(
+    46→            provider_type=AIProviderType.MOCK,
+    47→            default_model="mock-model",
+    48→        )
+    49→        self._available = True
+    50→        self._responses: dict[str, str] = {}  # prompt → response mapping
+    51→        self._call_count = 0
+    52→
+    53→    @property
+    54→    def provider_type(self) -> AIProviderType:
+    55→        return AIProviderType.MOCK
+    56→
+    57→    @property
+    58→    def is_available(self) -> bool:
+    59→        return self._available
+    60→
+    61→    def set_available(self, available: bool) -> None:
+    62→        """Set availability for testing."""
+    63→        self._available = available
+    64→
+    65→    def set_response(self, prompt_substring: str, response: str) -> None:
+    66→        """Set a canned response for prompts containing a substring."""
+    67→        self._responses[prompt_substring] = response
+    68→
+    69→    async def generate(self, request: AIRequest) -> AIResponse:
+    70→        self._call_count += 1
+    71→        if not self._available:
+    72→            raise AIProviderError(
+    73→                "Mock provider is unavailable",
+    74→                provider=AIProviderType.MOCK,
+    75→            )
+    76→
+    77→        # Check for canned response
+    78→        content = None
+    79→        for substring, response in self._responses.items():
+    80→            if substring.lower() in request.prompt.lower():
+    81→                content = response
+    82→                break
+    83→
+    84→        if content is None:
+    85→            content = f"[Mock AI Response] Prompt was: {request.prompt[:200]}..."
+    86→
+    87→        prompt_tokens = len(request.prompt) // 4  # Rough estimate
+    88→        completion_tokens = len(content) // 4
+    89→
+    90→        return AIResponse(
+    91→            request_id=request.id,
+    92→            content=content,
+    93→            model=self._config.default_model or "mock-model",
+    94→            provider=AIProviderType.MOCK,
+    95→            prompt_tokens=prompt_tokens,
+    96→            completion_tokens=completion_tokens,
+    97→            total_tokens=prompt_tokens + completion_tokens,
+    98→            cost_cents=0,
+    99→            latency_ms=10,
+   100→            response_id=f"mock-{self._call_count}",
+   101→            finish_reason="stop",
+   102→            safety_verdict=SafetyVerdict.SAFE,
+   103→            confidence=0.95,
+   104→        )
+   105→
+   106→    async def stream(self, request: AIRequest) -> AsyncGenerator[AIStreamChunk, None]:
+   107→        if not self._available:
+   108→            raise AIProviderError("Mock unavailable", provider=AIProviderType.MOCK)
+   109→
+   110→        content = f"[Mock AI Stream] {request.prompt[:100]}..."
+   111→        words = content.split()
+   112→        total = 0
+   113→        for i, word in enumerate(words):
+   114→            total += len(word) // 4
+   115→            yield AIStreamChunk(
+   116→                request_id=request.id,
+   117→                content=word + " ",
+   118→                is_final=(i == len(words) - 1),
+   119→                total_tokens=total,
+   120→            )
+   121→            await asyncio.sleep(0.01)  # Simulate streaming delay
+   122→
+   123→    async def check_availability(self) -> bool:
+   124→        return self._available
+   125→
+   126→    async def list_models(self) -> list[str]:
+   127→        return ["mock-model"]
+   128→
+   129→
+   130→# ============================================================
+   131→# Ollama Provider (default — local AI)
+   132→# ============================================================
+   133→
+   134→
+   135→class OllamaProvider(AIProvider):
+   136→    """Ollama provider — runs models locally.
+   137→
+   138→    Default model: Qwen (latest stable 7B/8B class model)
+   139→    Configuration:
+   140→    - OLLAMA_HOST (default: http://localhost:11434)
+   141→    - OLLAMA_MODEL (default: qwen2.5:7b)
+   142→    - AI_TIMEOUT
+   143→    - MAX_CONTEXT
+   144→    - MAX_TOKENS
+   145→    - TEMPERATURE
+   146→    """
+   147→
+   148→    def __init__(self, config: AIProviderConfig) -> None:
+   149→        self._config = config
+   150→        self._host = config.host or "http://localhost:11434"
+   151→        self._default_model = config.default_model or "qwen2.5:7b"
+   152→        self._available: bool | None = None  # Cached availability
+   153→        self._client = httpx.AsyncClient(
+   154→            base_url=self._host,
+   155→            timeout=config.timeout_seconds,
+   156→        )
+   157→
+   158→    @property
+   159→    def provider_type(self) -> AIProviderType:
+   160→        return AIProviderType.OLLAMA
+   161→
+   162→    @property
+   163→    def is_available(self) -> bool:
+   164→        if self._available is None:
+   165→            return True  # Optimistic — will check on first request
+   166→        return self._available
+   167→
+   168→    async def check_availability(self) -> bool:
+   169→        """Check if Ollama is running and the model is available."""
+   170→        try:
+   171→            response = await self._client.get("/api/tags", timeout=5.0)
+   172→            if response.status_code != 200:
+   173→                self._available = False
+   174→                return False
+   175→            data = response.json()
+   176→            models = [m.get("name", "") for m in data.get("models", [])]
+   177→            # Check if default model is available
+   178→            if self._default_model not in models:
+   179→                # Try without tag suffix
+   180→                base_model = self._default_model.split(":")[0]
+   181→                if not any(base_model in m for m in models):
+   182→                    logger.warning(
+   183→                        "ollama_model_not_found",
+   184→                        model=self._default_model,
+   185→                        available=models,
+   186→                    )
+   187→                    self._available = False
+   188→                    return False
+   189→            self._available = True
+   190→            return True
+   191→        except Exception as exc:
+   192→            logger.warning("ollama_unavailable", error=str(exc))
+   193→            self._available = False
+   194→            return False
+   195→
+   196→    async def generate(self, request: AIRequest) -> AIResponse:
+   197→        start_time = time.time()
+   198→        model = request.model or self._default_model
+   199→
+   200→        try:
+   201→            payload = {
+   202→                "model": model,
+   203→                "prompt": request.prompt,
+   204→                "stream": False,
+   205→                "options": {
+   206→                    "temperature": request.temperature,
+   207→                    "num_predict": request.max_tokens,
+   208→                    "num_ctx": request.max_context,
+   209→                },
+   210→            }
+   211→            if request.system_prompt:
+   212→                payload["system"] = request.system_prompt
+   213→
+   214→            response = await self._client.post(
+   215→                "/api/generate",
+   216→                json=payload,
+   217→                timeout=self._config.timeout_seconds,
+   218→            )
+   219→
+   220→            if response.status_code == 429:
+   221→                raise AIRateLimitError(
+   222→                    "Ollama rate limited",
+   223→                    provider=AIProviderType.OLLAMA,
+   224→                )
+   225→
+   226→            response.raise_for_status()
+   227→            data = response.json()
+   228→
+   229→            latency_ms = int((time.time() - start_time) * 1000)
+   230→            content = data.get("response", "")
+   231→            prompt_tokens = data.get("prompt_eval_count", len(request.prompt) // 4)
+   232→            completion_tokens = data.get("eval_count", len(content) // 4)
+   233→
+   234→            return AIResponse(
+   235→                request_id=request.id,
+   236→                content=content,
+   237→                model=model,
+   238→                provider=AIProviderType.OLLAMA,
+   239→                prompt_tokens=prompt_tokens,
+   240→                completion_tokens=completion_tokens,
+   241→                total_tokens=prompt_tokens + completion_tokens,
+   242→                cost_cents=0,  # Local model — no cost
+   243→                latency_ms=latency_ms,
+   244→                response_id=data.get("created", ""),
+   245→                finish_reason="stop",
+   246→                safety_verdict=SafetyVerdict.SAFE,
+   247→                confidence=0.7,  # Default confidence for local models
+   248→            )
+   249→
+   250→        except httpx.TimeoutException:
+   251→            raise AITimeoutError(
+   252→                f"Ollama request timed out after {self._config.timeout_seconds}s",
+   253→                provider=AIProviderType.OLLAMA,
+   254→                timeout_seconds=self._config.timeout_seconds,
+   255→            )
+   256→        except httpx.HTTPError as exc:
+   257→            raise AIProviderError(
+   258→                f"Ollama request failed: {exc}",
+   259→                provider=AIProviderType.OLLAMA,
+   260→                is_retryable=True,
+   261→            )
+   262→
+   263→    async def stream(self, request: AIRequest) -> AsyncGenerator[AIStreamChunk, None]:
+   264→        model = request.model or self._default_model
+   265→        payload = {
+   266→            "model": model,
+   267→            "prompt": request.prompt,
+   268→            "stream": True,
+   269→            "options": {
+   270→                "temperature": request.temperature,
+   271→                "num_predict": request.max_tokens,
+   272→            },
+   273→        }
+   274→        if request.system_prompt:
+   275→            payload["system"] = request.system_prompt
+   276→
+   277→        total_tokens = 0
+   278→        try:
+   279→            async with self._client.stream(
+   280→                "POST",
+   281→                "/api/generate",
+   282→                json=payload,
+   283→                timeout=self._config.timeout_seconds,
+   284→            ) as response:
+   285→                response.raise_for_status()
+   286→                async for line in response.aiter_lines():
+   287→                    if not line:
+   288→                        continue
+   289→                    try:
+   290→                        chunk = json.loads(line)
+   291→                        content = chunk.get("response", "")
+   292→                        done = chunk.get("done", False)
+   293→                        total_tokens = chunk.get("eval_count", total_tokens)
+   294→                        yield AIStreamChunk(
+   295→                            request_id=request.id,
+   296→                            content=content,
+   297→                            is_final=done,
+   298→                            total_tokens=total_tokens,
+   299→                        )
+   300→                        if done:
+   301→                            break
+   302→                    except json.JSONDecodeError:
+   303→                        continue
+   304→        except httpx.TimeoutException:
+   305→            raise AITimeoutError(
+   306→                "Ollama stream timed out",
+   307→                provider=AIProviderType.OLLAMA,
+   308→                timeout_seconds=self._config.timeout_seconds,
+   309→            )
+   310→
+   311→    async def list_models(self) -> list[str]:
+   312→        try:
+   313→            response = await self._client.get("/api/tags", timeout=5.0)
+   314→            if response.status_code != 200:
+   315→                return []
+   316→            data = response.json()
+   317→            return [m.get("name", "") for m in data.get("models", [])]
+   318→        except Exception:
+   319→            return []
+   320→
+   321→    async def close(self) -> None:
+   322→        await self._client.aclose()
+   323→
+   324→
+   325→# ============================================================
+   326→# OpenAI Provider
+   327→# ============================================================
+   328→
+   329→
+   330→class OpenAIProvider(AIProvider):
+   331→    """OpenAI provider — uses the OpenAI-compatible API."""
+   332→
+   333→    def __init__(self, config: AIProviderConfig) -> None:
+   334→        self._config = config
+   335→        self._api_key = config.api_key
+   336→        self._default_model = config.default_model or "gpt-4o-mini"
+   337→        self._base_url = "https://api.openai.com/v1"
+   338→        self._client = httpx.AsyncClient(
+   339→            base_url=self._base_url,
+   340→            headers={"Authorization": f"Bearer {self._api_key}"},
+   341→            timeout=config.timeout_seconds,
+   342→        )
+   343→
+   344→    @property
+   345→    def provider_type(self) -> AIProviderType:
+   346→        return AIProviderType.OPENAI
+   347→
+   348→    @property
+   349→    def is_available(self) -> bool:
+   350→        return self._api_key is not None
+   351→
+   352→    async def check_availability(self) -> bool:
+   353→        if not self._api_key:
+   354→            return False
+   355→        try:
+   356→            response = await self._client.get("/models", timeout=5.0)
+   357→            return response.status_code == 200
+   358→        except Exception:
+   359→            return False
+   360→
+   361→    async def generate(self, request: AIRequest) -> AIResponse:
+   362→        start_time = time.time()
+   363→        model = request.model or self._default_model
+   364→
+   365→        payload: dict[str, Any] = {
+   366→            "model": model,
+   367→            "messages": [],
+   368→            "temperature": request.temperature,
+   369→            "max_tokens": request.max_tokens,
+   370→            "stream": False,
+   371→        }
+   372→        if request.system_prompt:
+   373→            payload["messages"].append({"role": "system", "content": request.system_prompt})
+   374→        payload["messages"].append({"role": "user", "content": request.prompt})
+   375→
+   376→        try:
+   377→            response = await self._client.post("/chat/completions", json=payload)
+   378→            if response.status_code == 429:
+   379→                raise AIRateLimitError("OpenAI rate limited", provider=AIProviderType.OPENAI)
+   380→            response.raise_for_status()
+   381→            data = response.json()
+   382→
+   383→            choice = data["choices"][0]
+   384→            content = choice["message"]["content"]
+   385→            usage = data.get("usage", {})
+   386→            prompt_tokens = usage.get("prompt_tokens", 0)
+   387→            completion_tokens = usage.get("completion_tokens", 0)
+   388→            cost = calculate_cost(
+   389→                prompt_tokens, completion_tokens,
+   390→                self._config.cost_per_1k_input_cents,
+   391→                self._config.cost_per_1k_output_cents,
+   392→            )
+   393→
+   394→            return AIResponse(
+   395→                request_id=request.id,
+   396→                content=content,
+   397→                model=model,
+   398→                provider=AIProviderType.OPENAI,
+   399→                prompt_tokens=prompt_tokens,
+   400→                completion_tokens=completion_tokens,
+   401→                total_tokens=prompt_tokens + completion_tokens,
+   402→                cost_cents=cost,
+   403→                latency_ms=int((time.time() - start_time) * 1000),
+   404→                response_id=data.get("id"),
+   405→                finish_reason=choice.get("finish_reason"),
+   406→                safety_verdict=SafetyVerdict.SAFE,
+   407→                confidence=0.8,
+   408→            )
+   409→        except httpx.TimeoutException:
+   410→            raise AITimeoutError("OpenAI timeout", provider=AIProviderType.OPENAI, timeout_seconds=self._config.timeout_seconds)
+   411→        except httpx.HTTPError as exc:
+   412→            raise AIProviderError(f"OpenAI failed: {exc}", provider=AIProviderType.OPENAI, is_retryable=True)
+   413→
+   414→    async def stream(self, request: AIRequest) -> AsyncGenerator[AIStreamChunk, None]:
+   415→        model = request.model or self._default_model
+   416→        payload: dict[str, Any] = {
+   417→            "model": model,
+   418→            "messages": [],
+   419→            "temperature": request.temperature,
+   420→            "max_tokens": request.max_tokens,
+   421→            "stream": True,
+   422→        }
+   423→        if request.system_prompt:
+   424→            payload["messages"].append({"role": "system", "content": request.system_prompt})
+   425→        payload["messages"].append({"role": "user", "content": request.prompt})
+   426→
+   427→        try:
+   428→            async with self._client.stream("POST", "/chat/completions", json=payload) as response:
+   429→                response.raise_for_status()
+   430→                async for line in response.aiter_lines():
+   431→                    if not line or not line.startswith("data: "):
+   432→                        continue
+   433→                    data_str = line[6:]
+   434→                    if data_str == "[DONE]":
+   435→                        yield AIStreamChunk(request_id=request.id, content="", is_final=True)
+   436→                        break
+   437→                    try:
+   438→                        chunk = json.loads(data_str)
+   439→                        delta = chunk["choices"][0].get("delta", {})
+   440→                        content = delta.get("content", "")
+   441→                        if content:
+   442→                            yield AIStreamChunk(request_id=request.id, content=content)
+   443→                    except (json.JSONDecodeError, KeyError, IndexError):
+   444→                        continue
+   445→        except httpx.TimeoutException:
+   446→            raise AITimeoutError("OpenAI stream timeout", provider=AIProviderType.OPENAI, timeout_seconds=self._config.timeout_seconds)
+   447→
+   448→    async def list_models(self) -> list[str]:
+   449→        try:
+   450→            response = await self._client.get("/models", timeout=5.0)
+   451→            if response.status_code != 200:
+   452→                return []
+   453→            data = response.json()
+   454→            return [m["id"] for m in data.get("data", [])]
+   455→        except Exception:
+   456→            return []
+   457→
+   458→    async def close(self) -> None:
+   459→        await self._client.aclose()
+   460→
+   461→
+   462→# ============================================================
+   463→# Gemini Provider
+   464→# ============================================================
+   465→
+   466→
+   467→class GeminiProvider(AIProvider):
+   468→    """Google Gemini provider."""
+   469→
+   470→    def __init__(self, config: AIProviderConfig) -> None:
+   471→        self._config = config
+   472→        self._api_key = config.api_key
+   473→        self._default_model = config.default_model or "gemini-1.5-flash"
+   474→        self._base_url = "https://generativelanguage.googleapis.com/v1beta"
+   475→        self._client = httpx.AsyncClient(
+   476→            timeout=config.timeout_seconds,
+   477→        )
+   478→
+   479→    @property
+   480→    def provider_type(self) -> AIProviderType:
+   481→        return AIProviderType.GEMINI
+   482→
+   483→    @property
+   484→    def is_available(self) -> bool:
+   485→        return self._api_key is not None
+   486→
+   487→    async def check_availability(self) -> bool:
+   488→        return self._api_key is not None
+   489→
+   490→    async def generate(self, request: AIRequest) -> AIResponse:
+   491→        start_time = time.time()
+   492→        model = request.model or self._default_model
+   493→
+   494→        payload = {
+   495→            "contents": [{"parts": [{"text": request.prompt}]}],
+   496→            "generationConfig": {
+   497→                "temperature": request.temperature,
+   498→                "maxOutputTokens": request.max_tokens,
+   499→            },
+   500→        }
+   501→        if request.system_prompt:
+   502→            payload["systemInstruction"] = {"parts": [{"text": request.system_prompt}]}
+   503→
+   504→        try:
+   505→            response = await self._client.post(
+   506→                f"{self._base_url}/models/{model}:generateContent?key={self._api_key}",
+   507→                json=payload,
+   508→                timeout=self._config.timeout_seconds,
+   509→            )
+   510→            if response.status_code == 429:
+   511→                raise AIRateLimitError("Gemini rate limited", provider=AIProviderType.GEMINI)
+   512→            response.raise_for_status()
+   513→            data = response.json()
+   514→
+   515→            content = data["candidates"][0]["content"]["parts"][0]["text"]
+   516→            usage = data.get("usageMetadata", {})
+   517→            prompt_tokens = usage.get("promptTokenCount", 0)
+   518→            completion_tokens = usage.get("candidatesTokenCount", 0)
+   519→            cost = calculate_cost(
+   520→                prompt_tokens, completion_tokens,
+   521→                self._config.cost_per_1k_input_cents,
+   522→                self._config.cost_per_1k_output_cents,
+   523→            )
+   524→
+   525→            return AIResponse(
+   526→                request_id=request.id,
+   527→                content=content,
+   528→                model=model,
+   529→                provider=AIProviderType.GEMINI,
+   530→                prompt_tokens=prompt_tokens,
+   531→                completion_tokens=completion_tokens,
+   532→                total_tokens=prompt_tokens + completion_tokens,
+   533→                cost_cents=cost,
+   534→                latency_ms=int((time.time() - start_time) * 1000),
+   535→                finish_reason=data["candidates"][0].get("finishReason"),
+   536→                safety_verdict=SafetyVerdict.SAFE,
+   537→                confidence=0.8,
+   538→            )
+   539→        except httpx.TimeoutException:
+   540→            raise AITimeoutError("Gemini timeout", provider=AIProviderType.GEMINI, timeout_seconds=self._config.timeout_seconds)
+   541→        except httpx.HTTPError as exc:
+   542→            raise AIProviderError(f"Gemini failed: {exc}", provider=AIProviderType.GEMINI, is_retryable=True)
+   543→
+   544→    async def stream(self, request: AIRequest) -> AsyncGenerator[AIStreamChunk, None]:
+   545→        # Gemini streaming uses SSE
+   546→        model = request.model or self._default_model
+   547→        payload = {
+   548→            "contents": [{"parts": [{"text": request.prompt}]}],
+   549→            "generationConfig": {"temperature": request.temperature, "maxOutputTokens": request.max_tokens},
+   550→        }
+   551→        try:
+   552→            async with self._client.stream(
+   553→                "POST",
+   554→                f"{self._base_url}/models/{model}:streamGenerateContent?key={self._api_key}",
+   555→                json=payload,
+   556→            ) as response:
+   557→                response.raise_for_status()
+   558→                async for line in response.aiter_lines():
+   559→                    if not line.startswith("data: "):
+   560→                        continue
+   561→                    try:
+   562→                        chunk = json.loads(line[6:])
+   563→                        text = chunk.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+   564→                        if text:
+   565→                            yield AIStreamChunk(request_id=request.id, content=text)
+   566→                    except (json.JSONDecodeError, IndexError, KeyError):
+   567→                        continue
+   568→                yield AIStreamChunk(request_id=request.id, content="", is_final=True)
+   569→        except httpx.TimeoutException:
+   570→            raise AITimeoutError("Gemini stream timeout", provider=AIProviderType.GEMINI, timeout_seconds=self._config.timeout_seconds)
+   571→
+   572→    async def list_models(self) -> list[str]:
+   573→        return ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+   574→
+   575→    async def close(self) -> None:
+   576→        await self._client.aclose()
+   577→
+   578→
+   579→# ============================================================
+   580→# Anthropic Provider
+   581→# ============================================================
+   582→
+   583→
+   584→class AnthropicProvider(AIProvider):
+   585→    """Anthropic Claude provider."""
+   586→
+   587→    def __init__(self, config: AIProviderConfig) -> None:
+   588→        self._config = config
+   589→        self._api_key = config.api_key
+   590→        self._default_model = config.default_model or "claude-3-5-sonnet-20241022"
+   591→        self._base_url = "https://api.anthropic.com/v1"
+   592→        self._client = httpx.AsyncClient(
+   593→            base_url=self._base_url,
+   594→            headers={
+   595→                "x-api-key": self._api_key or "",
+   596→                "anthropic-version": "2023-06-01",
+   597→                "content-type": "application/json",
+   598→            },
+   599→            timeout=config.timeout_seconds,
+   600→        )
+   601→
+   602→    @property
+   603→    def provider_type(self) -> AIProviderType:
+   604→        return AIProviderType.ANTHROPIC
+   605→
+   606→    @property
+   607→    def is_available(self) -> bool:
+   608→        return self._api_key is not None
+   609→
+   610→    async def check_availability(self) -> bool:
+   611→        return self._api_key is not None
+   612→
+   613→    async def generate(self, request: AIRequest) -> AIResponse:
+   614→        start_time = time.time()
+   615→        model = request.model or self._default_model
+   616→
+   617→        payload = {
+   618→            "model": model,
+   619→            "max_tokens": request.max_tokens,
+   620→            "temperature": request.temperature,
+   621→            "messages": [{"role": "user", "content": request.prompt}],
+   622→        }
+   623→        if request.system_prompt:
+   624→            payload["system"] = request.system_prompt
+   625→
+   626→        try:
+   627→            response = await self._client.post("/messages", json=payload)
+   628→            if response.status_code == 429:
+   629→                raise AIRateLimitError("Anthropic rate limited", provider=AIProviderType.ANTHROPIC)
+   630→            response.raise_for_status()
+   631→            data = response.json()
+   632→
+   633→            content = data["content"][0]["text"]
+   634→            usage = data.get("usage", {})
+   635→            prompt_tokens = usage.get("input_tokens", 0)
+   636→            completion_tokens = usage.get("output_tokens", 0)
+   637→            cost = calculate_cost(
+   638→                prompt_tokens, completion_tokens,
+   639→                self._config.cost_per_1k_input_cents,
+   640→                self._config.cost_per_1k_output_cents,
+   641→            )
+   642→
+   643→            return AIResponse(
+   644→                request_id=request.id,
+   645→                content=content,
+   646→                model=model,
+   647→                provider=AIProviderType.ANTHROPIC,
+   648→                prompt_tokens=prompt_tokens,
+   649→                completion_tokens=completion_tokens,
+   650→                total_tokens=prompt_tokens + completion_tokens,
+   651→                cost_cents=cost,
+   652→                latency_ms=int((time.time() - start_time) * 1000),
+   653→                response_id=data.get("id"),
+   654→                finish_reason=data.get("stop_reason"),
+   655→                safety_verdict=SafetyVerdict.SAFE,
+   656→                confidence=0.85,
+   657→            )
+   658→        except httpx.TimeoutException:
+   659→            raise AITimeoutError("Anthropic timeout", provider=AIProviderType.ANTHROPIC, timeout_seconds=self._config.timeout_seconds)
+   660→        except httpx.HTTPError as exc:
+   661→            raise AIProviderError(f"Anthropic failed: {exc}", provider=AIProviderType.ANTHROPIC, is_retryable=True)
+   662→
+   663→    async def stream(self, request: AIRequest) -> AsyncGenerator[AIStreamChunk, None]:
+   664→        model = request.model or self._default_model
+   665→        payload = {
+   666→            "model": model,
+   667→            "max_tokens": request.max_tokens,
+   668→            "temperature": request.temperature,
+   669→            "messages": [{"role": "user", "content": request.prompt}],
+   670→            "stream": True,
+   671→        }
+   672→        if request.system_prompt:
+   673→            payload["system"] = request.system_prompt
+   674→
+   675→        try:
+   676→            async with self._client.stream("POST", "/messages", json=payload) as response:
+   677→                response.raise_for_status()
+   678→                async for line in response.aiter_lines():
+   679→                    if not line.startswith("data: "):
+   680→                        continue
+   681→                    try:
+   682→                        chunk = json.loads(line[6:])
+   683→                        if chunk.get("type") == "content_block_delta":
+   684→                            text = chunk.get("delta", {}).get("text", "")
+   685→                            if text:
+   686→                                yield AIStreamChunk(request_id=request.id, content=text)
+   687→                        elif chunk.get("type") == "message_stop":
+   688→                            yield AIStreamChunk(request_id=request.id, content="", is_final=True)
+   689→                            break
+   690→                    except json.JSONDecodeError:
+   691→                        continue
+   692→        except httpx.TimeoutException:
+   693→            raise AITimeoutError("Anthropic stream timeout", provider=AIProviderType.ANTHROPIC, timeout_seconds=self._config.timeout_seconds)
+   694→
+   695→    async def list_models(self) -> list[str]:
+   696→        return ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
+   697→
+   698→    async def close(self) -> None:
+   699→        await self._client.aclose()
+   700→
+   701→
+   702→# ============================================================
+   703→# Provider Factory
+   704→# ============================================================
+   705→
+   706→
+   707→def create_provider(
+   708→    provider_type: AIProviderType,
+   709→    config: AIProviderConfig,
+   710→) -> AIProvider:
+   711→    """Create a provider instance by type."""
+   712→    if provider_type == AIProviderType.OLLAMA:
+   713→        return OllamaProvider(config)
+   714→    elif provider_type == AIProviderType.OPENAI:
+   715→        return OpenAIProvider(config)
+   716→    elif provider_type == AIProviderType.GEMINI:
+   717→        return GeminiProvider(config)
+   718→    elif provider_type == AIProviderType.ANTHROPIC:
+   719→        return AnthropicProvider(config)
+   720→    elif provider_type == AIProviderType.MOCK:
+   721→        return MockProvider(config)
+   722→    else:
+   723→        raise ValueError(f"Unknown provider type: {provider_type}")
+   724→
+   725→
+   726→__all__ = [
+   727→    "MockProvider",
+   728→    "OllamaProvider",
+   729→    "OpenAIProvider",
+   730→    "GeminiProvider",
+   731→    "AnthropicProvider",
+   732→    "create_provider",
+   733→]
+   734→
