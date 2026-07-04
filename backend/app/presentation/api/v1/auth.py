@@ -252,6 +252,15 @@ async def register(
                 status_code=422,
                 detail={"code": "VALIDATION_FAILED", "message": str(exc)},
             )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "INTERNAL_ERROR", "message": f"Registration failed: {exc}"},
+            )
 
     # NOTE: In production, verification_token is sent via email asynchronously.
     # We do NOT return it in the response (security: don't expose the token).
