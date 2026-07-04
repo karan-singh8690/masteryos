@@ -119,47 +119,42 @@ class Settings(BaseSettings):
     # ================================
     # CORS
     # ================================
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:3000", "http://localhost:8000"],
-        description="Allowed CORS origins.",
+    # Stored as string to avoid pydantic-settings trying json.loads() on it.
+    # Use the `cors_origins_list` property to get the parsed list.
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:8000",
+        description="Allowed CORS origins (comma-separated or single URL).",
     )
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: object) -> list[str]:
-        """Parse CORS_ORIGINS from env, handling:
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse cors_origins string into a list, handling:
         - JSON array: '["https://example.com"]'
         - Comma-separated: 'https://a.com,https://b.com'
         - Single URL: 'https://example.com'
         - Escaped JSON from Railway: '[\\"https://example.com\\"]'
-        - Already a list (from default_factory)
         """
-        if v is None:
+        import json
+        s = self.cors_origins.strip()
+        if not s:
             return ["http://localhost:3000", "http://localhost:8000"]
-        if isinstance(v, list):
-            return v
-        if isinstance(v, str):
-            s = v.strip()
-            # If it looks like JSON array, try parsing
-            if s.startswith("["):
-                import json
-                # Unescape if Railway double-escaped it
+        # If it looks like JSON array, try parsing
+        if s.startswith("["):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    return [str(x) for x in parsed]
+            except json.JSONDecodeError:
+                # Try unescaping backslashes (Railway double-escapes)
                 try:
-                    parsed = json.loads(s)
+                    unescaped = s.replace('\\"', '"')
+                    parsed = json.loads(unescaped)
                     if isinstance(parsed, list):
                         return [str(x) for x in parsed]
                 except json.JSONDecodeError:
-                    # Try unescaping backslashes
-                    try:
-                        unescaped = s.replace('\\"', '"')
-                        parsed = json.loads(unescaped)
-                        if isinstance(parsed, list):
-                            return [str(x) for x in parsed]
-                    except json.JSONDecodeError:
-                        pass
-            # Treat as comma-separated
-            return [origin.strip() for origin in s.split(",") if origin.strip()]
-        return ["http://localhost:3000", "http://localhost:8000"]
+                    pass
+        # Treat as comma-separated
+        return [origin.strip() for origin in s.split(",") if origin.strip()]
 
     # ================================
     # Feature flags
