@@ -147,6 +147,8 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.ai import router as ai_router
     # Learner portal endpoints (dashboard, mastery, reviews, recommendations, achievements, notifications)
     from app.presentation.api.v1.learner import router as learner_router
+    # Feature flags endpoint
+    from app.presentation.api.v1.feature_flags import router as feature_flags_router
     # Task 025-deploy: import beta_templates so its email templates register
     # into the TEMPLATES dict at app startup.
     from app.infrastructure.email import beta_templates  # noqa: F401
@@ -161,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(beta_ops_router, prefix="/api/v1")
     app.include_router(ai_router, prefix="/api/v1")
     app.include_router(learner_router, prefix="/api/v1")
+    app.include_router(feature_flags_router, prefix="/api/v1")
 
     # Root endpoint
     @app.get("/", tags=["Root"])
