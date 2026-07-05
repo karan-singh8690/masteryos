@@ -102,6 +102,34 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'Organization',
+              name: 'MasteryOS',
+              url: process.env.NEXT_PUBLIC_SITE_URL || 'https://masteryos.space-z.ai',
+              logo: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://masteryos.space-z.ai'}/brand/logo.svg`,
+              description: 'Adaptive learning platform with measurable mastery tracking.',
+            }),
+          }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'SoftwareApplication',
+              name: 'MasteryOS',
+              applicationCategory: 'EducationApplication',
+              operatingSystem: 'Web',
+              offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+            }),
+          }}
+        />
+      </head>
       <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen bg-background text-foreground antialiased`}>
         <ProductionProviders>{children}</ProductionProviders>
       </body>

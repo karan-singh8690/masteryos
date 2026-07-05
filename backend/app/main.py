@@ -118,13 +118,23 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(ETagMiddleware)
     app.add_middleware(CompressionMiddleware)
+    # Redis cache middleware (Phase 5: performance)
+    try:
+        import redis.asyncio as aioredis
+        from app.infrastructure.cache.middleware import CacheMiddleware
+        cache_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await cache_redis.ping()
+        app.add_middleware(CacheMiddleware, redis_client=cache_redis)
+        logger.info("cache_middleware_registered")
+    except Exception as exc:
+        logger.warning("cache_middleware_skipped", error=str(exc))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-Correlation-ID"],
+        expose_headers=["X-Request-ID", "X-Correlation-ID", "X-Cache"],
     )
 
     # ================================
