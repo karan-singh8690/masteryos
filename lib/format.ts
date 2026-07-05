@@ -103,13 +103,14 @@ export function toTitleCase(str: string): string {
  * Format an email for display (lowercase).
  */
 export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase()
+  return (email || '').trim().toLowerCase()
 }
 
 /**
  * Get initials from a display name (max 2 characters).
  */
-export function getInitials(name: string): string {
+export function getInitials(name: string | undefined | null): string {
+  if (!name || typeof name !== 'string') return '?'
   const parts = name.trim().split(/\s+/)
   if (parts.length === 0 || parts[0] === '') return '?'
   if (parts.length === 1) return parts[0]!.charAt(0).toUpperCase()
