@@ -150,7 +150,19 @@ async def create_tables() -> bool:
             await conn.run_sync(Base.metadata.create_all)
 
         await engine.dispose()
-        print("[startup] Database tables created successfully (47 tables)")
+        print("[startup] Database tables created successfully")
+
+        # Step 4: Auto-seed Python interview content
+        print("[startup] Seeding Python interview content...")
+        try:
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from scripts.seed_content import seed_content
+            await seed_content()
+        except Exception as seed_err:
+            print(f"[startup] Content seeding skipped: {seed_err}")
+
         return True
     except Exception as e:
         print(f"[startup] ERROR: Table creation failed: {e}")

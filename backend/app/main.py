@@ -153,6 +153,8 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.billing import router as billing_router
     # Admin management (users, orgs, RBAC, audit, analytics, system config, billing admin)
     from app.presentation.api.v1.admin_management import router as admin_management_router
+    # Content seeding
+    from app.presentation.api.v1.content_seed import router as content_seed_router
     # Task 025-deploy: import beta_templates so its email templates register
     # into the TEMPLATES dict at app startup.
     from app.infrastructure.email import beta_templates  # noqa: F401
@@ -170,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(feature_flags_router, prefix="/api/v1")
     app.include_router(billing_router, prefix="/api/v1")
     app.include_router(admin_management_router, prefix="/api/v1")
+    app.include_router(content_seed_router, prefix="/api/v1")
 
     # Global exception handler — ensures all errors (including 500s)
     # return a JSON response with proper CORS headers.
