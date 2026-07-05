@@ -104,14 +104,11 @@ async def websocket_endpoint(
     user_id = None
 
     try:
-        # Decode JWT — verify_access_token returns a TokenClaims dataclass.
-        from app.infrastructure.security.jwt_service import JWTService, JWTKeyManager
-        key_manager = JWTKeyManager(keys_dir=settings.jwt_keys_dir) if settings.jwt_keys_dir else None
-        jwt_service = JWTService(
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            key_manager=key_manager,
-        )
+        # Use the singleton JWT service (same key manager as the rest of the app).
+        # Creating a new JWTKeyManager here would generate a DIFFERENT ephemeral
+        # key pair → verify_access_token would always fail → 403.
+        from app.presentation.dependencies import get_jwt_service
+        jwt_service = get_jwt_service()
         claims = jwt_service.verify_access_token(token)
         # TokenClaims is a dataclass — access .user_id, NOT .get("sub")
         if claims is not None and claims.user_id is not None:

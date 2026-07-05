@@ -193,6 +193,155 @@ class DashboardResponse(BaseModel):
 # ============================================================
 
 
+# IMPORTANT: Static routes (like /dashboard) MUST be declared BEFORE
+# parameterized routes (like /{question_instance_id}) so FastAPI matches
+# them first. Otherwise /dashboard would match /{question_instance_id}
+# and fail UUID parsing → 422 Unprocessable Entity.
+@router.get(
+    "/dashboard",
+    response_model=DashboardResponse,
+    tags=["Dashboard"],
+    summary="Get the enriched learner dashboard",
+)
+async def get_dashboard(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> DashboardResponse:
+    """Get the enriched dashboard with mastery, reviews, streak, and readiness."""
+    try:
+        from sqlalchemy import select, func
+
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+
+            # Load enrollments for the user
+            enrollments = await _uow.enrollments.list_by_user(
+                __import__("app.domain.shared.ids", fromlist=["UserId"]).UserId(user_id)
+            )
+
+            if not enrollments:
+                return DashboardResponse(
+                    enrollment_id=None,
+                    recommended_action="enroll_in_subject",
+                    current_streak=0,
+                    longest_streak=0,
+                    weak_concepts=[],
+                    strong_concepts=[],
+                    today_reviews=0,
+                    today_queue_remaining=0,
+                    daily_progress=0.0,
+                    interview_readiness=0.0,
+                    memory_trend=[],
+                    mastery_trend=[],
+                )
+
+            # Use the first enrollment (simplified — in production, the learner selects)
+            enrollment = enrollments[0]
+            enrollment_id = enrollment.id
+
+            # Load mastery scores
+            all_scores = await _uow.mastery_scores.list_by_enrollment(enrollment_id)
+            weak_scores = [s for s in all_scores if s.is_weak]
+            strong_scores = [s for s in all_scores if s.is_proficient_or_above]
+
+            # Load due reviews
+            due_reviews = await _uow.reviews.list_due_by_enrollment(enrollment_id)
+            today_reviews = len(due_reviews)
+
+            # Load streak
+            streak = await _uow.streaks.get_by_enrollment(enrollment_id)
+
+            # Check for active session
+            active_session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
+
+        # Compute interview readiness (simplified: average mastery of strong concepts)
+        if all_scores:
+            avg_mastery = sum(s.mastery_score_combined for s in all_scores) / len(all_scores)
+            interview_readiness = round(avg_mastery, 4)
+        else:
+            interview_readiness = 0.0
+
+        # Determine recommended action
+        if active_session is not None:
+            recommended_action = "continue_session"
+        elif weak_scores:
+            recommended_action = "drill_weak_concepts"
+        elif today_reviews > 0:
+            recommended_action = "review_due"
+        else:
+            recommended_action = "start_session"
+
+        # Build mastery trend (simplified — in production, from analytics snapshots)
+        mastery_trend = [
+            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
+             "avg_mastery": interview_readiness}
+            for i in range(7, 0, -1)
+        ]
+
+        memory_trend = [
+            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
+             "avg_memory": sum(s.memory_score for s in all_scores) / max(len(all_scores), 1)}
+            for i in range(7, 0, -1)
+        ]
+
+        return DashboardResponse(
+            enrollment_id=enrollment_id.value,
+            recommended_action=recommended_action,
+            current_streak=streak.current_streak if streak else 0,
+            longest_streak=streak.longest_streak if streak else 0,
+            weak_concepts=[
+                MasteryScoreDTO(
+                    concept_id=s.concept_id.value,
+                    memory_score=s.memory_score,
+                    durable_mastery_score=s.durable_mastery_score,
+                    mastery_score_combined=s.mastery_score_combined,
+                    concept_state=s.concept_state.value,
+                    weakness_severity=s.weakness_severity.value,
+                    evidence_count=s.evidence_count,
+                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
+                )
+                for s in weak_scores[:10]
+            ],
+            strong_concepts=[
+                MasteryScoreDTO(
+                    concept_id=s.concept_id.value,
+                    memory_score=s.memory_score,
+                    durable_mastery_score=s.durable_mastery_score,
+                    mastery_score_combined=s.mastery_score_combined,
+                    concept_state=s.concept_state.value,
+                    weakness_severity=s.weakness_severity.value,
+                    evidence_count=s.evidence_count,
+                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
+                )
+                for s in strong_scores[:10]
+            ],
+            today_reviews=today_reviews,
+            today_queue_remaining=max(0, 15 - (active_session.question_count if active_session else 0)),
+            daily_progress=round((active_session.question_count / 15) if active_session else 0.0, 4),
+            interview_readiness=interview_readiness,
+            memory_trend=memory_trend,
+            mastery_trend=mastery_trend,
+        )
+    except Exception as exc:
+        # If anything goes wrong, return an empty dashboard instead of 500
+        import traceback
+        traceback.print_exc()
+        return DashboardResponse(
+            enrollment_id=None,
+            recommended_action="start_session",
+            current_streak=0,
+            longest_streak=0,
+            weak_concepts=[],
+            strong_concepts=[],
+            today_reviews=0,
+            today_queue_remaining=0,
+            daily_progress=0.0,
+            interview_readiness=0.0,
+            memory_trend=[],
+            mastery_trend=[],
+        )
+
+
 @router.get(
     "/{question_instance_id}",
     response_model=QuestionResponse,
@@ -651,151 +800,6 @@ async def submit_answer(
 # ============================================================
 # Dashboard endpoint (enriched)
 # ============================================================
-
-
-@router.get(
-    "/dashboard",
-    response_model=DashboardResponse,
-    tags=["Dashboard"],
-    summary="Get the enriched learner dashboard",
-)
-async def get_dashboard(
-    user_id: UUID = Depends(get_current_user_id),
-    uow: UnitOfWork = Depends(get_uow),
-) -> DashboardResponse:
-    """Get the enriched dashboard with mastery, reviews, streak, and readiness."""
-    try:
-        from sqlalchemy import select, func
-
-        async with uow as _uow:
-            session = _uow._session  # type: ignore[union-attr]
-
-            # Load enrollments for the user
-            enrollments = await _uow.enrollments.list_by_user(
-                __import__("app.domain.shared.ids", fromlist=["UserId"]).UserId(user_id)
-            )
-
-            if not enrollments:
-                return DashboardResponse(
-                    enrollment_id=None,
-                    recommended_action="enroll_in_subject",
-                    current_streak=0,
-                    longest_streak=0,
-                    weak_concepts=[],
-                    strong_concepts=[],
-                    today_reviews=0,
-                    today_queue_remaining=0,
-                    daily_progress=0.0,
-                    interview_readiness=0.0,
-                    memory_trend=[],
-                    mastery_trend=[],
-                )
-
-            # Use the first enrollment (simplified — in production, the learner selects)
-            enrollment = enrollments[0]
-            enrollment_id = enrollment.id
-
-            # Load mastery scores
-            all_scores = await _uow.mastery_scores.list_by_enrollment(enrollment_id)
-            weak_scores = [s for s in all_scores if s.is_weak]
-            strong_scores = [s for s in all_scores if s.is_proficient_or_above]
-
-            # Load due reviews
-            due_reviews = await _uow.reviews.list_due_by_enrollment(enrollment_id)
-            today_reviews = len(due_reviews)
-
-            # Load streak
-            streak = await _uow.streaks.get_by_enrollment(enrollment_id)
-
-            # Check for active session
-            active_session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
-
-        # Compute interview readiness (simplified: average mastery of strong concepts)
-        if all_scores:
-            avg_mastery = sum(s.mastery_score_combined for s in all_scores) / len(all_scores)
-            interview_readiness = round(avg_mastery, 4)
-        else:
-            interview_readiness = 0.0
-
-        # Determine recommended action
-        if active_session is not None:
-            recommended_action = "continue_session"
-        elif weak_scores:
-            recommended_action = "drill_weak_concepts"
-        elif today_reviews > 0:
-            recommended_action = "review_due"
-        else:
-            recommended_action = "start_session"
-
-        # Build mastery trend (simplified — in production, from analytics snapshots)
-        mastery_trend = [
-            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
-             "avg_mastery": interview_readiness}
-            for i in range(7, 0, -1)
-        ]
-
-        memory_trend = [
-            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
-             "avg_memory": sum(s.memory_score for s in all_scores) / max(len(all_scores), 1)}
-            for i in range(7, 0, -1)
-        ]
-
-        return DashboardResponse(
-            enrollment_id=enrollment_id.value,
-            recommended_action=recommended_action,
-            current_streak=streak.current_streak if streak else 0,
-            longest_streak=streak.longest_streak if streak else 0,
-            weak_concepts=[
-                MasteryScoreDTO(
-                    concept_id=s.concept_id.value,
-                    memory_score=s.memory_score,
-                    durable_mastery_score=s.durable_mastery_score,
-                    mastery_score_combined=s.mastery_score_combined,
-                    concept_state=s.concept_state.value,
-                    weakness_severity=s.weakness_severity.value,
-                    evidence_count=s.evidence_count,
-                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
-                )
-                for s in weak_scores[:10]
-            ],
-            strong_concepts=[
-                MasteryScoreDTO(
-                    concept_id=s.concept_id.value,
-                    memory_score=s.memory_score,
-                    durable_mastery_score=s.durable_mastery_score,
-                    mastery_score_combined=s.mastery_score_combined,
-                    concept_state=s.concept_state.value,
-                    weakness_severity=s.weakness_severity.value,
-                    evidence_count=s.evidence_count,
-                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
-                )
-                for s in strong_scores[:10]
-            ],
-            today_reviews=today_reviews,
-            today_queue_remaining=max(0, 15 - (active_session.question_count if active_session else 0)),
-            daily_progress=round((active_session.question_count / 15) if active_session else 0.0, 4),
-            interview_readiness=interview_readiness,
-            memory_trend=memory_trend,
-            mastery_trend=mastery_trend,
-        )
-    except Exception as exc:
-        # If anything goes wrong, return an empty dashboard instead of 500
-        import traceback
-        traceback.print_exc()
-        return DashboardResponse(
-            enrollment_id=None,
-            recommended_action="start_session",
-            current_streak=0,
-            longest_streak=0,
-            weak_concepts=[],
-            strong_concepts=[],
-            today_reviews=0,
-            today_queue_remaining=0,
-            daily_progress=0.0,
-            interview_readiness=0.0,
-            memory_trend=[],
-            mastery_trend=[],
-        )
 
 
 # ============================================================
