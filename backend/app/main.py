@@ -196,6 +196,77 @@ def create_app() -> FastAPI:
     from fastapi import Request
     from fastapi.responses import JSONResponse
 
+    # AuthorizationDenied → 403 (NOT 500). Two classes exist (infra + app layer).
+    from app.infrastructure.security.authorization import (
+        AuthorizationDenied as InfraAuthorizationDenied,
+    )
+    from app.application.shared import (
+        AuthorizationDenied as AppAuthorizationDenied,
+        ResourceMissing,
+        ConcurrencyConflict,
+        ApplicationConflict,
+    )
+
+    @app.exception_handler(InfraAuthorizationDenied)
+    async def infra_authz_handler(request: Request, exc: InfraAuthorizationDenied):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": {
+                    "code": "FORBIDDEN",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(AppAuthorizationDenied)
+    async def app_authz_handler(request: Request, exc: AppAuthorizationDenied):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": {
+                    "code": "FORBIDDEN",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(ResourceMissing)
+    async def resource_missing_handler(request: Request, exc: ResourceMissing):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "detail": {
+                    "code": "NOT_FOUND",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(ConcurrencyConflict)
+    async def concurrency_conflict_handler(request: Request, exc: ConcurrencyConflict):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "CONCURRENCY_CONFLICT",
+                    "message": str(exc),
+                }
+            },
+        )
+
+    @app.exception_handler(ApplicationConflict)
+    async def application_conflict_handler(request: Request, exc: ApplicationConflict):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "CONFLICT",
+                    "message": str(exc),
+                }
+            },
+        )
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         import traceback

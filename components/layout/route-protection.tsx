@@ -24,7 +24,9 @@ export function ProtectedRoute({ children, requireRoles }: ProtectedRouteProps) 
 
   React.useEffect(() => {
     if (!isLoading && isAuthenticated && requireRoles && user) {
-      const hasRole = user.roles.some((role) => requireRoles.includes(role))
+      // Defensive: user.roles may be undefined briefly during login flow
+      const roles = Array.isArray(user.roles) ? user.roles : []
+      const hasRole = roles.some((role) => requireRoles.includes(role))
       if (!hasRole) {
         router.push(ROUTES.FORBIDDEN)
       }
@@ -40,7 +42,9 @@ export function ProtectedRoute({ children, requireRoles }: ProtectedRouteProps) 
   }
 
   if (requireRoles && user) {
-    const hasRole = user.roles.some((role) => requireRoles.includes(role))
+    // Defensive: user.roles may be undefined briefly during login flow
+    const roles = Array.isArray(user.roles) ? user.roles : []
+    const hasRole = roles.some((role) => requireRoles.includes(role))
     if (!hasRole) return null
   }
 
@@ -76,7 +80,8 @@ interface RoleGuardProps {
 export function RoleGuard({ children, roles, fallback = null }: RoleGuardProps) {
   const { user } = useAuth()
 
-  if (!user || !user.roles.some((role) => roles.includes(role))) {
+  const userRoles = user && Array.isArray(user.roles) ? user.roles : []
+  if (!user || !userRoles.some((role) => roles.includes(role))) {
     return <>{fallback}</>
   }
 

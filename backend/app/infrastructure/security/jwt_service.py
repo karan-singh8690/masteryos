@@ -286,7 +286,8 @@ class JWTService:
                 user_id=UUID(payload["sub"]),
                 token_type=payload["typ"],
                 token_version=payload.get("ver", 1),
-                roles=payload.get("scope", "").split(","),
+                # Filter out empty strings from split (e.g. when scope claim is missing or empty)
+                roles=[r for r in payload.get("scope", "").split(",") if r],
                 issued_at=payload["iat"],
                 expires_at=payload["exp"],
                 issuer=payload["iss"],

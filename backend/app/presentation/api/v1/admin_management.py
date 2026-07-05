@@ -423,18 +423,37 @@ async def assign_role(
     role: str = Query(..., description="Role to assign"),
     uow: UnitOfWork = Depends(get_uow),
 ) -> dict[str, str]:
-    """Assign a role to a user."""
+    """Assign a role to a user.
+
+    Also bumps token_version so any in-flight JWTs (carrying the old role)
+    are immediately invalidated. The user must re-login to get a fresh
+    token with the new role claim.
+    """
     valid_roles = [ROLE_LEARNER, ROLE_INSTRUCTOR, ROLE_CONTENT_EDITOR, ROLE_ORGANIZATION_ADMIN, ROLE_ADMINISTRATOR, ROLE_SYSTEM_ADMIN]
     if role not in valid_roles:
         raise HTTPException(status_code=422, detail=f"Invalid role. Must be one of: {valid_roles}")
     try:
         async with uow as _uow:
             session = _uow._session  # type: ignore[union-attr]
+            # Read current token_version + bump it (invalidates all existing JWTs).
+            row = (await session.execute(
+                select(UserModel.token_version).where(UserModel.id == user_id)
+            )).first()
+            current_version = row[0] if row else 1
             await session.execute(
-                update(UserModel).where(UserModel.id == user_id).values(role=role)
+                update(UserModel).where(UserModel.id == user_id).values(
+                    role=role,
+                    token_version=current_version + 1,
+                )
+            )
+            # Revoke all active sessions so the user must log in again.
+            await session.execute(
+                update(SessionModel).where(
+                    and_(SessionModel.user_id == user_id, SessionModel.revoked_at.is_(None))
+                ).values(revoked_at=datetime.now(timezone.utc))
             )
             await session.commit()
-        return {"message": f"Role '{role}' assigned"}
+        return {"message": f"Role '{role}' assigned. User must re-login (token version bumped)."}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

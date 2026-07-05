@@ -104,8 +104,7 @@ async def websocket_endpoint(
     user_id = None
 
     try:
-        # Decode JWT
-        # Try to read public key
+        # Decode JWT — verify_access_token returns a TokenClaims dataclass.
         from app.infrastructure.security.jwt_service import JWTService, JWTKeyManager
         key_manager = JWTKeyManager(keys_dir=settings.jwt_keys_dir) if settings.jwt_keys_dir else None
         jwt_service = JWTService(
@@ -114,8 +113,9 @@ async def websocket_endpoint(
             key_manager=key_manager,
         )
         claims = jwt_service.verify_access_token(token)
-        if claims and claims.get("sub"):
-            user_id = UUID(claims["sub"])
+        # TokenClaims is a dataclass — access .user_id, NOT .get("sub")
+        if claims is not None and claims.user_id is not None:
+            user_id = UUID(str(claims.user_id))
     except Exception as exc:
         logger.warning("ws_auth_failed", error=str(exc))
         await websocket.close(code=4001, reason="Authentication failed")
