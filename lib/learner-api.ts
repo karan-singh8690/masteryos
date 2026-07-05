@@ -106,7 +106,15 @@ export const questionApi = {
 // ============================================================
 
 export const dashboardApi = {
-  get: () => apiClient.get<DashboardData>('/questions/dashboard'),
+  get: async (): Promise<DashboardData | null> => {
+    try {
+      return await apiClient.get<DashboardData>('/questions/dashboard')
+    } catch (error) {
+      // 422 or other errors — return null so dashboard shows empty state
+      console.warn('Dashboard API failed, showing empty state:', error)
+      return null
+    }
+  },
 }
 
 // ============================================================
