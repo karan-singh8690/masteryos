@@ -29,27 +29,27 @@ export default function AdminDashboardPage() {
 
       {/* Primary stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Users} label="Active Users" value={dashboard.active_users} sublabel={`${dashboard.daily_active_users} DAU`} />
-        <StatCard icon={Activity} label="Study Sessions" value={dashboard.active_study_sessions} sublabel={`${dashboard.queue_throughput}/min throughput`} />
-        <StatCard icon={Server} label="Workers" value={`${dashboard.worker_status.active}/${dashboard.worker_status.total}`} sublabel={`${dashboard.worker_status.dead} dead`} />
-        <StatCard icon={AlertTriangle} label="Dead Letters" value={dashboard.dead_letter_count} sublabel={`${dashboard.outbox_backlog} outbox backlog`} />
+        <StatCard icon={Users} label="Active Users" value={safeDashboard.active_users ?? 0} sublabel={`${safeDashboard.daily_active_users ?? 0} DAU`} />
+        <StatCard icon={Activity} label="Study Sessions" value={safeDashboard.active_study_sessions ?? 0} sublabel={`${safeDashboard.queue_throughput ?? 0}/min throughput`} />
+        <StatCard icon={Server} label="Workers" value={`${safeDashboard.worker_status?.active ?? 0}/${safeDashboard.worker_status?.total ?? 0}`} sublabel={`${safeDashboard.worker_status?.dead ?? 0} dead`} />
+        <StatCard icon={AlertTriangle} label="Dead Letters" value={safeDashboard.dead_letter_count ?? 0} sublabel={`${safeDashboard.outbox_backlog ?? 0} outbox backlog`} />
       </div>
 
       {/* Health + Performance */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Mail} label="Notification Rate" value={`${Math.round(dashboard.notification_delivery_rate * 100)}%`} sublabel="delivery success" />
-        <StatCard icon={Mail} label="Email Rate" value={`${Math.round(dashboard.email_delivery_rate * 100)}%`} sublabel="delivery success" />
-        <StatCard icon={Zap} label="API Latency" value={`${dashboard.api_latency_ms}ms`} sublabel={`${(dashboard.error_rate * 100).toFixed(1)}% error rate`} />
-        <StatCard icon={Flag} label="Feature Flags" value={dashboard.feature_flags_enabled} sublabel="enabled" />
+        <StatCard icon={Mail} label="Notification Rate" value={`${Math.round((safeDashboard.notification_delivery_rate ?? 0) * 100)}%`} sublabel="delivery success" />
+        <StatCard icon={Mail} label="Email Rate" value={`${Math.round((safeDashboard.email_delivery_rate ?? 0) * 100)}%`} sublabel="delivery success" />
+        <StatCard icon={Zap} label="API Latency" value={`${safeDashboard.api_latency_ms ?? 0}ms`} sublabel={`${((safeDashboard.error_rate ?? 0) * 100).toFixed(1)}% error rate`} />
+        <StatCard icon={Flag} label="Feature Flags" value={safeDashboard.feature_flags_enabled ?? 0} sublabel="enabled" />
       </div>
 
       {/* System Health */}
       <Card>
         <CardHeader><CardTitle className="text-base">System Health</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
-          <HealthIndicator label="Database" status={dashboard.database_health} />
-          <HealthIndicator label="Redis" status={dashboard.redis_health} />
-          <HealthIndicator label="Background Jobs" value={dashboard.background_jobs} />
+          <HealthIndicator label="Database" status={safeDashboard.database_health ?? 'healthy'} />
+          <HealthIndicator label="Redis" status={safeDashboard.redis_health ?? 'healthy'} />
+          <HealthIndicator label="Background Jobs" value={safeDashboard.background_jobs ?? 0} />
         </CardContent>
       </Card>
 
@@ -62,18 +62,18 @@ export default function AdminDashboardPage() {
           <CardContent>
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{(dashboard.storage_usage.used / 1e9).toFixed(1)} GB used</span>
-                <span className="text-muted-foreground">{(dashboard.storage_usage.total / 1e9).toFixed(1)} GB total</span>
+                <span className="text-muted-foreground">{((safeDashboard.storage_usage?.used ?? 0) / 1e9).toFixed(1)} GB used</span>
+                <span className="text-muted-foreground">{((safeDashboard.storage_usage?.total ?? 1) / 1e9).toFixed(1)} GB total</span>
               </div>
-              <Progress value={(dashboard.storage_usage.used / dashboard.storage_usage.total) * 100} />
+              <Progress value={((safeDashboard.storage_usage?.used ?? 0) / (safeDashboard.storage_usage?.total ?? 1)) * 100} />
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle className="text-base">System Information</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Version</span><span className="font-medium">{dashboard.system_version}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Active Organizations</span><span className="font-medium">{dashboard.active_organizations}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Version</span><span className="font-medium">{safeDashboard.system_version ?? '1.0.0'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Active Organizations</span><span className="font-medium">{safeDashboard.active_organizations ?? 0}</span></div>
           </CardContent>
         </Card>
       </div>

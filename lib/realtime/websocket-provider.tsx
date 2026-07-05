@@ -22,7 +22,7 @@
 import * as React from 'react'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const WS_URL = API_URL.replace('http', 'ws').replace('https', 'wss') + '/ws'
+const WS_URL = API_URL.replace('http', 'ws').replace('https', 'wss') + '/api/v1/ws'
 
 export type WSMessageType =
   | 'notification'
