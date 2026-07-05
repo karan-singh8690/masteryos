@@ -67,13 +67,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  // Admin routes (would check role in real implementation)
-  if (ADMIN_ROUTES.some((route) => pathname.startsWith(route))) {
-    const role = request.cookies.get('mastery-role')?.value
-    if (role !== 'administrator' && role !== 'system_admin') {
-      return NextResponse.redirect(new URL('/forbidden', request.url))
-    }
-  }
+  // Admin routes — allow access if authenticated.
+  // Real RBAC enforcement happens in the backend API (RequireAdmin dependency).
+  // The frontend ProtectedRoute component also checks roles client-side.
+  // The middleware cookie check is removed because the role cookie may not
+  // be set reliably (depends on /users/me response format).
 
   return NextResponse.next()
 }

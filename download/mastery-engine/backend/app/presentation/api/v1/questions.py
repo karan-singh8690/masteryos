@@ -654,7 +654,7 @@ async def submit_answer(
 
 
 @router.get(
-    "/api/v1/dashboard",
+    "/dashboard",
     response_model=DashboardResponse,
     tags=["Dashboard"],
     summary="Get the enriched learner dashboard",

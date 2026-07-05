@@ -31,9 +31,12 @@ export function FeatureFlagProvider({ children }: { children: React.ReactNode })
 
   const flags = React.useMemo(() => {
     const map = new Map<string, boolean>()
-    if (data) {
+    // Defensive: ensure data is an array before calling forEach
+    if (data && Array.isArray(data)) {
       data.forEach((flag) => {
-        map.set(flag.key, flag.enabled)
+        if (flag && flag.key) {
+          map.set(flag.key, flag.enabled)
+        }
       })
     }
     return map

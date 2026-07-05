@@ -96,7 +96,18 @@ export const rbacApi = {
 // ============================================================
 
 export const featureFlagApi = {
-  list: () => apiClient.get<FeatureFlag[]>('/admin/feature-flags'),
+  list: async (): Promise<FeatureFlag[]> => {
+    const res = await apiClient.get<{ flags: FeatureFlag[] } | FeatureFlag[]>('/admin/feature-flags')
+    // Backend returns { flags: [...] }, extract the array
+    if (res && typeof res === 'object' && 'flags' in res && Array.isArray((res as any).flags)) {
+      return (res as any).flags
+    }
+    // Fallback: if it's already an array
+    if (Array.isArray(res)) {
+      return res
+    }
+    return []
+  },
   getById: (id: UUID) => apiClient.get<FeatureFlag>(`/admin/feature-flags/${id}`),
   create: (data: CreateFeatureFlagRequest) => apiClient.post<FeatureFlag>('/admin/feature-flags', data),
   update: (id: UUID, data: Partial<FeatureFlag>) => apiClient.patch<FeatureFlag>(`/admin/feature-flags/${id}`, data),

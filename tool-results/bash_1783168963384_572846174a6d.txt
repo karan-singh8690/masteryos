@@ -1,0 +1,655 @@
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "learner"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "instructor"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "content_editor"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "organization_admin"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "administrator"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "role IN ('learner', 'instructor', 'content_editor', 'organization_admin', 'admin" references unknown column "system_admin"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "pending_verification"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "active"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "suspended"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "deactivated"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "pending_deletion"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.users constraint "status IN ('pending_verification', 'active', 'suspended', 'deactivated', 'pendin" references unknown column "anonymized"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'email', 'email_verified_at', 'id', 'last_login_at', 'mfa_enabled', 'mfa_secret_encrypted', 'password_changed_at', 'role', 'status', 'token_version', 'updated_at']
+
+WARNING: identity.user_credentials constraint "(credential_type = 'password' AND password_hash IS NOT NULL) OR (credential_type" references unknown column "password"
+  Table columns: ['created_at', 'credential_type', 'deleted_at', 'id', 'password_hash', 'provider', 'provider_user_id', 'updated_at', 'user_id']
+
+WARNING: identity.user_credentials constraint "(credential_type = 'password' AND password_hash IS NOT NULL) OR (credential_type" references unknown column "oauth"
+  Table columns: ['created_at', 'credential_type', 'deleted_at', 'id', 'password_hash', 'provider', 'provider_user_id', 'updated_at', 'user_id']
+
+WARNING: identity.user_credentials constraint "credential_type IN ('password', 'oauth')" references unknown column "password"
+  Table columns: ['created_at', 'credential_type', 'deleted_at', 'id', 'password_hash', 'provider', 'provider_user_id', 'updated_at', 'user_id']
+
+WARNING: identity.user_credentials constraint "credential_type IN ('password', 'oauth')" references unknown column "oauth"
+  Table columns: ['created_at', 'credential_type', 'deleted_at', 'id', 'password_hash', 'provider', 'provider_user_id', 'updated_at', 'user_id']
+
+WARNING: identity.verification_tokens constraint "token_type IN ('email_verification', 'email_change')" references unknown column "email_verification"
+  Table columns: ['consumed_at', 'created_at', 'deleted_at', 'expires_at', 'id', 'ip_address', 'token_hash', 'token_type', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.verification_tokens constraint "token_type IN ('email_verification', 'email_change')" references unknown column "email_change"
+  Table columns: ['consumed_at', 'created_at', 'deleted_at', 'expires_at', 'id', 'ip_address', 'token_hash', 'token_type', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.mfa_secrets constraint "status IN ('pending', 'active', 'revoked')" references unknown column "pending"
+  Table columns: ['created_at', 'deleted_at', 'enabled_at', 'id', 'revoked_at', 'secret_encrypted', 'status', 'updated_at', 'user_id']
+
+WARNING: identity.mfa_secrets constraint "status IN ('pending', 'active', 'revoked')" references unknown column "active"
+  Table columns: ['created_at', 'deleted_at', 'enabled_at', 'id', 'revoked_at', 'secret_encrypted', 'status', 'updated_at', 'user_id']
+
+WARNING: identity.mfa_secrets constraint "status IN ('pending', 'active', 'revoked')" references unknown column "revoked"
+  Table columns: ['created_at', 'deleted_at', 'enabled_at', 'id', 'revoked_at', 'secret_encrypted', 'status', 'updated_at', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "refresh_token_reuse"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "login_brute_force"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "mfa_brute_force"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "suspicious_ip"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "account_takeover_attempt"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "password_spray"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "session_hijack_attempt"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "rate_limit_violation"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "incident_type IN ('refresh_token_reuse', 'login_brute_force', 'mfa_brute_force'," references unknown column "other"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "severity IN ('info', 'warning', 'critical')" references unknown column "info"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "severity IN ('info', 'warning', 'critical')" references unknown column "warning"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.security_incidents constraint "severity IN ('info', 'warning', 'critical')" references unknown column "critical"
+  Table columns: ['created_at', 'deleted_at', 'description', 'id', 'incident_type', 'ip_address', 'metadata', 'resolution_notes', 'resolved_at', 'resolved_by', 'severity', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.auth_audit_logs constraint "action IN ('LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'LOGOUT_ALL', 'PASSWORD_C" references unknown column "_"
+  Table columns: ['action', 'correlation_id', 'created_at', 'deleted_at', 'details', 'id', 'ip_address', 'session_id', 'success', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: infrastructure.dead_letter_events constraint "severity IN ('warning', 'error', 'critical')" references unknown column "warning"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'error_message', 'error_type', 'event_type', 'final_worker_id', 'id', 'original_event_id', 'originating_schema', 'payload', 'replayed_as_event_id', 'resolution_notes', 'resolved_at', 'resolved_by', 'retry_count', 'retry_history', 'severity', 'stack_trace', 'subscriber_handler', 'updated_at']
+
+WARNING: infrastructure.dead_letter_events constraint "severity IN ('warning', 'error', 'critical')" references unknown column "error"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'error_message', 'error_type', 'event_type', 'final_worker_id', 'id', 'original_event_id', 'originating_schema', 'payload', 'replayed_as_event_id', 'resolution_notes', 'resolved_at', 'resolved_by', 'retry_count', 'retry_history', 'severity', 'stack_trace', 'subscriber_handler', 'updated_at']
+
+WARNING: infrastructure.dead_letter_events constraint "severity IN ('warning', 'error', 'critical')" references unknown column "critical"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'error_message', 'error_type', 'event_type', 'final_worker_id', 'id', 'original_event_id', 'originating_schema', 'payload', 'replayed_as_event_id', 'resolution_notes', 'resolved_at', 'resolved_by', 'retry_count', 'retry_history', 'severity', 'stack_trace', 'subscriber_handler', 'updated_at']
+
+WARNING: administration.notifications constraint "priority IN ('low', 'normal', 'high', 'urgent')" references unknown column "low"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "priority IN ('low', 'normal', 'high', 'urgent')" references unknown column "normal"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "priority IN ('low', 'normal', 'high', 'urgent')" references unknown column "high"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "priority IN ('low', 'normal', 'high', 'urgent')" references unknown column "urgent"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "queued"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "sent"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "delivered"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "opened"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "dismissed"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "status IN ('queued', 'sent', 'delivered', 'opened', 'dismissed', 'failed')" references unknown column "failed"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "channel IN ('in_app', 'email', 'push', 'sms')" references unknown column "in_app"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "channel IN ('in_app', 'email', 'push', 'sms')" references unknown column "email"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "channel IN ('in_app', 'email', 'push', 'sms')" references unknown column "push"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notifications constraint "channel IN ('in_app', 'email', 'push', 'sms')" references unknown column "sms"
+  Table columns: ['body', 'channel', 'created_at', 'dedup_key', 'deleted_at', 'delivered_at', 'dismissed_at', 'expires_at', 'failed_at', 'failure_reason', 'id', 'locale', 'notification_type', 'opened_at', 'payload', 'priority', 'related_aggregate_id', 'related_aggregate_type', 'scheduled_at', 'sent_at', 'status', 'title', 'updated_at', 'user_id']
+
+WARNING: administration.notification_preferences constraint "digest_frequency IN ('immediate', 'hourly', 'daily', 'weekly', 'never')" references unknown column "immediate"
+  Table columns: ['achievement_notifications_enabled', 'created_at', 'deleted_at', 'digest_frequency', 'email_enabled', 'id', 'in_app_enabled', 'marketing_notifications_enabled', 'push_enabled', 'quiet_hours_end', 'quiet_hours_start', 'reminder_notifications_enabled', 'security_notifications_enabled', 'sms_enabled', 'timezone', 'updated_at', 'user_id']
+
+WARNING: administration.notification_preferences constraint "digest_frequency IN ('immediate', 'hourly', 'daily', 'weekly', 'never')" references unknown column "hourly"
+  Table columns: ['achievement_notifications_enabled', 'created_at', 'deleted_at', 'digest_frequency', 'email_enabled', 'id', 'in_app_enabled', 'marketing_notifications_enabled', 'push_enabled', 'quiet_hours_end', 'quiet_hours_start', 'reminder_notifications_enabled', 'security_notifications_enabled', 'sms_enabled', 'timezone', 'updated_at', 'user_id']
+
+WARNING: administration.notification_preferences constraint "digest_frequency IN ('immediate', 'hourly', 'daily', 'weekly', 'never')" references unknown column "daily"
+  Table columns: ['achievement_notifications_enabled', 'created_at', 'deleted_at', 'digest_frequency', 'email_enabled', 'id', 'in_app_enabled', 'marketing_notifications_enabled', 'push_enabled', 'quiet_hours_end', 'quiet_hours_start', 'reminder_notifications_enabled', 'security_notifications_enabled', 'sms_enabled', 'timezone', 'updated_at', 'user_id']
+
+WARNING: administration.notification_preferences constraint "digest_frequency IN ('immediate', 'hourly', 'daily', 'weekly', 'never')" references unknown column "weekly"
+  Table columns: ['achievement_notifications_enabled', 'created_at', 'deleted_at', 'digest_frequency', 'email_enabled', 'id', 'in_app_enabled', 'marketing_notifications_enabled', 'push_enabled', 'quiet_hours_end', 'quiet_hours_start', 'reminder_notifications_enabled', 'security_notifications_enabled', 'sms_enabled', 'timezone', 'updated_at', 'user_id']
+
+WARNING: administration.notification_preferences constraint "digest_frequency IN ('immediate', 'hourly', 'daily', 'weekly', 'never')" references unknown column "never"
+  Table columns: ['achievement_notifications_enabled', 'created_at', 'deleted_at', 'digest_frequency', 'email_enabled', 'id', 'in_app_enabled', 'marketing_notifications_enabled', 'push_enabled', 'quiet_hours_end', 'quiet_hours_start', 'reminder_notifications_enabled', 'security_notifications_enabled', 'sms_enabled', 'timezone', 'updated_at', 'user_id']
+
+WARNING: infrastructure.scheduled_jobs constraint "status IN ('active', 'paused', 'disabled')" references unknown column "active"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.scheduled_jobs constraint "status IN ('active', 'paused', 'disabled')" references unknown column "paused"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.scheduled_jobs constraint "status IN ('active', 'paused', 'disabled')" references unknown column "disabled"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.scheduled_jobs constraint "schedule_type IN ('cron', 'interval', 'one_time')" references unknown column "cron"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.scheduled_jobs constraint "schedule_type IN ('cron', 'interval', 'one_time')" references unknown column "interval"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.scheduled_jobs constraint "schedule_type IN ('cron', 'interval', 'one_time')" references unknown column "one_time"
+  Table columns: ['consecutive_failures', 'created_at', 'deleted_at', 'description', 'failure_count', 'handler_name', 'id', 'last_run_at', 'last_run_duration_ms', 'last_run_error', 'last_run_status', 'lock_expires_at', 'locked_at', 'locked_by', 'max_runtime_seconds', 'name', 'next_run_at', 'retry_count', 'run_count', 'schedule_expr', 'schedule_type', 'status', 'updated_at']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "queued"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "sent"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "delivered"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "bounced"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "failed"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: infrastructure.email_delivery_log constraint "status IN ('queued', 'sent', 'delivered', 'bounced', 'failed', 'deferred')" references unknown column "deferred"
+  Table columns: ['attempt_count', 'bounce_reason', 'bounce_type', 'created_at', 'deleted_at', 'delivered_at', 'error_message', 'from_address', 'id', 'message_id', 'next_retry_at', 'notification_id', 'sent_at', 'smtp_response', 'status', 'subject', 'template_name', 'to_address', 'updated_at', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "bug"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "feature_request"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "ui_ux"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "content"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "performance"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "category IN ('bug', 'feature_request', 'ui_ux', 'content', 'performance', 'other" references unknown column "other"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "status IN ('open', 'acknowledged', 'resolved', 'closed')" references unknown column "open"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "status IN ('open', 'acknowledged', 'resolved', 'closed')" references unknown column "acknowledged"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "status IN ('open', 'acknowledged', 'resolved', 'closed')" references unknown column "resolved"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback constraint "status IN ('open', 'acknowledged', 'resolved', 'closed')" references unknown column "closed"
+  Table columns: ['browser', 'category', 'comment', 'correlation_id', 'created_at', 'deleted_at', 'id', 'platform', 'rating', 'resolution_notes', 'resolved_at', 'resolved_by', 'route', 'screenshot_url', 'status', 'updated_at', 'user_agent', 'user_id']
+
+WARNING: identity.beta_feedback_meta constraint "priority IN ('low', 'normal', 'high', 'urgent', 'blocker')" references unknown column "low"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "priority IN ('low', 'normal', 'high', 'urgent', 'blocker')" references unknown column "normal"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "priority IN ('low', 'normal', 'high', 'urgent', 'blocker')" references unknown column "high"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "priority IN ('low', 'normal', 'high', 'urgent', 'blocker')" references unknown column "urgent"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "priority IN ('low', 'normal', 'high', 'urgent', 'blocker')" references unknown column "blocker"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "untriaged"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "planned"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "in_progress"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "shipped"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "wont_fix"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: identity.beta_feedback_meta constraint "roadmap_status IN ('untriaged', 'planned', 'in_progress', 'shipped', 'wont_fix'," references unknown column "duplicate"
+  Table columns: ['assigned_to', 'created_at', 'deleted_at', 'duplicate_of', 'feedback_id', 'id', 'priority', 'roadmap_link', 'roadmap_status', 'tags', 'updated_at', 'updated_by']
+
+WARNING: administration.release_notes constraint "release_type IN ('major', 'minor', 'patch', 'hotfix', 'beta')" references unknown column "major"
+  Table columns: ['body', 'breaking_changes', 'bug_fixes', 'created_at', 'created_by', 'deleted_at', 'feature_freeze', 'features', 'id', 'known_issues', 'published_at', 'release_type', 'summary', 'title', 'updated_at', 'version']
+
+WARNING: administration.release_notes constraint "release_type IN ('major', 'minor', 'patch', 'hotfix', 'beta')" references unknown column "minor"
+  Table columns: ['body', 'breaking_changes', 'bug_fixes', 'created_at', 'created_by', 'deleted_at', 'feature_freeze', 'features', 'id', 'known_issues', 'published_at', 'release_type', 'summary', 'title', 'updated_at', 'version']
+
+WARNING: administration.release_notes constraint "release_type IN ('major', 'minor', 'patch', 'hotfix', 'beta')" references unknown column "patch"
+  Table columns: ['body', 'breaking_changes', 'bug_fixes', 'created_at', 'created_by', 'deleted_at', 'feature_freeze', 'features', 'id', 'known_issues', 'published_at', 'release_type', 'summary', 'title', 'updated_at', 'version']
+
+WARNING: administration.release_notes constraint "release_type IN ('major', 'minor', 'patch', 'hotfix', 'beta')" references unknown column "hotfix"
+  Table columns: ['body', 'breaking_changes', 'bug_fixes', 'created_at', 'created_by', 'deleted_at', 'feature_freeze', 'features', 'id', 'known_issues', 'published_at', 'release_type', 'summary', 'title', 'updated_at', 'version']
+
+WARNING: administration.release_notes constraint "release_type IN ('major', 'minor', 'patch', 'hotfix', 'beta')" references unknown column "beta"
+  Table columns: ['body', 'breaking_changes', 'bug_fixes', 'created_at', 'created_by', 'deleted_at', 'feature_freeze', 'features', 'id', 'known_issues', 'published_at', 'release_type', 'summary', 'title', 'updated_at', 'version']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "planned"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "building"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "canary"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "staged"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "live"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "rolled_back"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: administration.release_stages constraint "stage IN ('planned', 'building', 'canary', 'staged', 'live', 'rolled_back', 'aba" references unknown column "abandoned"
+  Table columns: ['completed_at', 'created_at', 'deleted_at', 'id', 'notes', 'release_note_id', 'rollout_percentage', 'stage', 'started_at', 'triggered_by', 'updated_at']
+
+WARNING: analytics.experiments constraint "status IN ('draft', 'running', 'completed', 'stopped')" references unknown column "draft"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "status IN ('draft', 'running', 'completed', 'stopped')" references unknown column "running"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "status IN ('draft', 'running', 'completed', 'stopped')" references unknown column "completed"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "status IN ('draft', 'running', 'completed', 'stopped')" references unknown column "stopped"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "ab"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "feature_rollout"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "recommendation"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "queue"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "explanation"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: analytics.experiments constraint "experiment_type IN ('ab', 'feature_rollout', 'recommendation', 'queue', 'explana" references unknown column "ai_vs_rule"
+  Table columns: ['created_at', 'deleted_at', 'description', 'ended_at', 'experiment_type', 'id', 'metadata', 'min_sample_size', 'name', 'rollout_percentage', 'started_at', 'status', 'target_metric', 'updated_at', 'variant_a', 'variant_b', 'winner']
+
+WARNING: learning.learner_enrollments constraint "status IN ('pending_onboarding', 'active', 'dormant', 'unenrolled', 'anonymized'" references unknown column "pending_onboarding"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'enrolled_at', 'id', 'last_active_at', 'learning_path_id', 'onboarded_at', 'status', 'subject_id', 'unenrolled_at', 'updated_at', 'user_id']
+
+WARNING: learning.learner_enrollments constraint "status IN ('pending_onboarding', 'active', 'dormant', 'unenrolled', 'anonymized'" references unknown column "active"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'enrolled_at', 'id', 'last_active_at', 'learning_path_id', 'onboarded_at', 'status', 'subject_id', 'unenrolled_at', 'updated_at', 'user_id']
+
+WARNING: learning.learner_enrollments constraint "status IN ('pending_onboarding', 'active', 'dormant', 'unenrolled', 'anonymized'" references unknown column "dormant"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'enrolled_at', 'id', 'last_active_at', 'learning_path_id', 'onboarded_at', 'status', 'subject_id', 'unenrolled_at', 'updated_at', 'user_id']
+
+WARNING: learning.learner_enrollments constraint "status IN ('pending_onboarding', 'active', 'dormant', 'unenrolled', 'anonymized'" references unknown column "unenrolled"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'enrolled_at', 'id', 'last_active_at', 'learning_path_id', 'onboarded_at', 'status', 'subject_id', 'unenrolled_at', 'updated_at', 'user_id']
+
+WARNING: learning.learner_enrollments constraint "status IN ('pending_onboarding', 'active', 'dormant', 'unenrolled', 'anonymized'" references unknown column "anonymized"
+  Table columns: ['anonymized_at', 'created_at', 'deleted_at', 'enrolled_at', 'id', 'last_active_at', 'learning_path_id', 'onboarded_at', 'status', 'subject_id', 'unenrolled_at', 'updated_at', 'user_id']
+
+WARNING: learning.study_sessions constraint "status IN ('active', 'paused', 'ended', 'abandoned')" references unknown column "active"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "status IN ('active', 'paused', 'ended', 'abandoned')" references unknown column "paused"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "status IN ('active', 'paused', 'ended', 'abandoned')" references unknown column "ended"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "status IN ('active', 'paused', 'ended', 'abandoned')" references unknown column "abandoned"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "intent IN ('drill', 'diagnostic', 'review', 'mixed')" references unknown column "drill"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "intent IN ('drill', 'diagnostic', 'review', 'mixed')" references unknown column "diagnostic"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "intent IN ('drill', 'diagnostic', 'review', 'mixed')" references unknown column "review"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: learning.study_sessions constraint "intent IN ('drill', 'diagnostic', 'review', 'mixed')" references unknown column "mixed"
+  Table columns: ['created_at', 'deleted_at', 'ended_at', 'id', 'intent', 'learner_enrollment_id', 'learning_session_id', 'question_count', 'started_at', 'status', 'target_question_count', 'updated_at']
+
+WARNING: assessment.question_instances constraint "status IN ('served', 'answered', 'abandoned')" references unknown column "served"
+  Table columns: ['abandoned_at', 'answered_at', 'content_version_id', 'correct_answer', 'created_at', 'deleted_at', 'distractors_with_tags', 'id', 'learner_enrollment_id', 'parameter_seed', 'parameter_values', 'rendered_choices', 'rendered_prompt', 'served_at', 'status', 'study_session_id', 'template_version_id', 'updated_at']
+
+WARNING: assessment.question_instances constraint "status IN ('served', 'answered', 'abandoned')" references unknown column "answered"
+  Table columns: ['abandoned_at', 'answered_at', 'content_version_id', 'correct_answer', 'created_at', 'deleted_at', 'distractors_with_tags', 'id', 'learner_enrollment_id', 'parameter_seed', 'parameter_values', 'rendered_choices', 'rendered_prompt', 'served_at', 'status', 'study_session_id', 'template_version_id', 'updated_at']
+
+WARNING: assessment.question_instances constraint "status IN ('served', 'answered', 'abandoned')" references unknown column "abandoned"
+  Table columns: ['abandoned_at', 'answered_at', 'content_version_id', 'correct_answer', 'created_at', 'deleted_at', 'distractors_with_tags', 'id', 'learner_enrollment_id', 'parameter_seed', 'parameter_values', 'rendered_choices', 'rendered_prompt', 'served_at', 'status', 'study_session_id', 'template_version_id', 'updated_at']
+
+WARNING: assessment.attempts constraint "scoring_outcome IN ('correct', 'incorrect', 'partial')" references unknown column "correct"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "scoring_outcome IN ('correct', 'incorrect', 'partial')" references unknown column "incorrect"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "scoring_outcome IN ('correct', 'incorrect', 'partial')" references unknown column "partial"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "attempt_intent IN ('practice', 'review', 'diagnostic')" references unknown column "practice"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "attempt_intent IN ('practice', 'review', 'diagnostic')" references unknown column "review"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "attempt_intent IN ('practice', 'review', 'diagnostic')" references unknown column "diagnostic"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "(scoring_outcome = 'partial' AND partial_credit IS NOT NULL) OR (scoring_outcome" references unknown column "partial"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.attempts constraint "(scoring_outcome = 'partial' AND partial_credit IS NOT NULL) OR (scoring_outcome" references unknown column "partial"
+  Table columns: ['algorithm_version_id', 'attempt_intent', 'content_version_id', 'created_at', 'deleted_at', 'hint_tiers_used', 'hint_used', 'id', 'learner_enrollment_id', 'misconception_id', 'partial_credit', 'question_instance_id', 'scoring_outcome', 'study_session_id', 'template_version_id', 'time_to_answer_ms', 'updated_at']
+
+WARNING: assessment.answers constraint "answer_type IN ('multiple_choice', 'code', 'free_response')" references unknown column "multiple_choice"
+  Table columns: ['answer_type', 'attempt_id', 'created_at', 'deleted_at', 'execution_result', 'id', 'question_instance_id', 'revision_count', 'revision_history', 'submitted_answer', 'submitted_at', 'updated_at']
+
+WARNING: assessment.answers constraint "answer_type IN ('multiple_choice', 'code', 'free_response')" references unknown column "code"
+  Table columns: ['answer_type', 'attempt_id', 'created_at', 'deleted_at', 'execution_result', 'id', 'question_instance_id', 'revision_count', 'revision_history', 'submitted_answer', 'submitted_at', 'updated_at']
+
+WARNING: assessment.answers constraint "answer_type IN ('multiple_choice', 'code', 'free_response')" references unknown column "free_response"
+  Table columns: ['answer_type', 'attempt_id', 'created_at', 'deleted_at', 'execution_result', 'id', 'question_instance_id', 'revision_count', 'revision_history', 'submitted_answer', 'submitted_at', 'updated_at']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "unseen"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "novice"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "developing"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "proficient"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "mastered"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "concept_state IN ('unseen', 'novice', 'developing', 'proficient', 'mastered', 'd" references unknown column "decayed"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "weakness_severity IN ('none', 'mild', 'moderate', 'severe')" references unknown column "none"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "weakness_severity IN ('none', 'mild', 'moderate', 'severe')" references unknown column "mild"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "weakness_severity IN ('none', 'mild', 'moderate', 'severe')" references unknown column "moderate"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.mastery_scores constraint "weakness_severity IN ('none', 'mild', 'moderate', 'severe')" references unknown column "severe"
+  Table columns: ['algorithm_version_id', 'concept_id', 'concept_state', 'confidence_interval', 'created_at', 'deleted_at', 'durable_mastery_score', 'evidence_count', 'id', 'last_attempt_at', 'last_updated_at', 'learner_enrollment_id', 'mastery_score_combined', 'memory_score', 'updated_at', 'version', 'weakness_severity']
+
+WARNING: mastery.reviews constraint "priority IN ('low', 'medium', 'high')" references unknown column "low"
+  Table columns: ['algorithm_version_id', 'concept_id', 'created_at', 'deleted_at', 'due_at', 'id', 'last_review_outcome', 'last_reviewed_at', 'learner_enrollment_id', 'priority', 'review_interval', 'scheduled_by_attempt_id', 'updated_at']
+
+WARNING: mastery.reviews constraint "priority IN ('low', 'medium', 'high')" references unknown column "medium"
+  Table columns: ['algorithm_version_id', 'concept_id', 'created_at', 'deleted_at', 'due_at', 'id', 'last_review_outcome', 'last_reviewed_at', 'learner_enrollment_id', 'priority', 'review_interval', 'scheduled_by_attempt_id', 'updated_at']
+
+WARNING: mastery.reviews constraint "priority IN ('low', 'medium', 'high')" references unknown column "high"
+  Table columns: ['algorithm_version_id', 'concept_id', 'created_at', 'deleted_at', 'due_at', 'id', 'last_review_outcome', 'last_reviewed_at', 'learner_enrollment_id', 'priority', 'review_interval', 'scheduled_by_attempt_id', 'updated_at']
+
+WARNING: infrastructure.outbox_events constraint "status IN ('pending', 'dispatched', 'dead_lettered')" references unknown column "pending"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'dispatch_attempt_count', 'dispatched_at', 'event_type', 'id', 'last_dispatch_error', 'leased_by', 'leased_until', 'next_retry_at', 'originating_schema', 'payload', 'payload_schema_version', 'retry_history', 'status', 'updated_at']
+
+WARNING: infrastructure.outbox_events constraint "status IN ('pending', 'dispatched', 'dead_lettered')" references unknown column "dispatched"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'dispatch_attempt_count', 'dispatched_at', 'event_type', 'id', 'last_dispatch_error', 'leased_by', 'leased_until', 'next_retry_at', 'originating_schema', 'payload', 'payload_schema_version', 'retry_history', 'status', 'updated_at']
+
+WARNING: infrastructure.outbox_events constraint "status IN ('pending', 'dispatched', 'dead_lettered')" references unknown column "dead_lettered"
+  Table columns: ['actor_user_id', 'aggregate_id', 'aggregate_type', 'created_at', 'deleted_at', 'dispatch_attempt_count', 'dispatched_at', 'event_type', 'id', 'last_dispatch_error', 'leased_by', 'leased_until', 'next_retry_at', 'originating_schema', 'payload', 'payload_schema_version', 'retry_history', 'status', 'updated_at']
+
+WARNING: content.subjects constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "draft"
+  Table columns: ['code', 'created_at', 'default_learning_path_id', 'deleted_at', 'deprecated_at', 'description', 'id', 'name', 'published_at', 'slug', 'status', 'tenant_id', 'updated_at']
+
+WARNING: content.subjects constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "published"
+  Table columns: ['code', 'created_at', 'default_learning_path_id', 'deleted_at', 'deprecated_at', 'description', 'id', 'name', 'published_at', 'slug', 'status', 'tenant_id', 'updated_at']
+
+WARNING: content.subjects constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['code', 'created_at', 'default_learning_path_id', 'deleted_at', 'deprecated_at', 'description', 'id', 'name', 'published_at', 'slug', 'status', 'tenant_id', 'updated_at']
+
+WARNING: content.concepts constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "draft"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "published"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "difficulty IN ('easy', 'medium', 'hard')" references unknown column "easy"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "difficulty IN ('easy', 'medium', 'hard')" references unknown column "medium"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "difficulty IN ('easy', 'medium', 'hard')" references unknown column "hard"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "importance IN ('low', 'medium', 'high')" references unknown column "low"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "importance IN ('low', 'medium', 'high')" references unknown column "medium"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.concepts constraint "importance IN ('low', 'medium', 'high')" references unknown column "high"
+  Table columns: ['created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'description', 'difficulty', 'id', 'importance', 'name', 'published_at', 'slug', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.learning_objectives constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "draft"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'id', 'published_at', 'statement', 'status', 'updated_at']
+
+WARNING: content.learning_objectives constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "published"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'id', 'published_at', 'statement', 'status', 'updated_at']
+
+WARNING: content.learning_objectives constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'id', 'published_at', 'statement', 'status', 'updated_at']
+
+WARNING: content.misconceptions constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "draft"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'remediation', 'status', 'updated_at']
+
+WARNING: content.misconceptions constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "published"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'remediation', 'status', 'updated_at']
+
+WARNING: content.misconceptions constraint "status IN ('draft', 'published', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['concept_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'remediation', 'status', 'updated_at']
+
+WARNING: content.question_templates constraint "status IN ('draft', 'in_review', 'published', 'deprecated')" references unknown column "draft"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "status IN ('draft', 'in_review', 'published', 'deprecated')" references unknown column "in_review"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "status IN ('draft', 'in_review', 'published', 'deprecated')" references unknown column "published"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "status IN ('draft', 'in_review', 'published', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "question_type IN ('multiple_choice', 'code_execution', 'free_response')" references unknown column "multiple_choice"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "question_type IN ('multiple_choice', 'code_execution', 'free_response')" references unknown column "code_execution"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.question_templates constraint "question_type IN ('multiple_choice', 'code_execution', 'free_response')" references unknown column "free_response"
+  Table columns: ['code', 'created_at', 'current_version_id', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'question_type', 'status', 'subject_id', 'updated_at']
+
+WARNING: content.template_versions constraint "difficulty_estimate IN ('easy', 'medium', 'hard')" references unknown column "easy"
+  Table columns: ['content_version_id', 'correct_answer_generator', 'created_at', 'deleted_at', 'difficulty_estimate', 'discrimination_estimate', 'distractor_generator', 'explanation_template', 'hint_tiers', 'id', 'parameter_schema', 'prompt_template', 'published_at', 'template_id', 'updated_at', 'version_number']
+
+WARNING: content.template_versions constraint "difficulty_estimate IN ('easy', 'medium', 'hard')" references unknown column "medium"
+  Table columns: ['content_version_id', 'correct_answer_generator', 'created_at', 'deleted_at', 'difficulty_estimate', 'discrimination_estimate', 'distractor_generator', 'explanation_template', 'hint_tiers', 'id', 'parameter_schema', 'prompt_template', 'published_at', 'template_id', 'updated_at', 'version_number']
+
+WARNING: content.template_versions constraint "difficulty_estimate IN ('easy', 'medium', 'hard')" references unknown column "hard"
+  Table columns: ['content_version_id', 'correct_answer_generator', 'created_at', 'deleted_at', 'difficulty_estimate', 'discrimination_estimate', 'distractor_generator', 'explanation_template', 'hint_tiers', 'id', 'parameter_schema', 'prompt_template', 'published_at', 'template_id', 'updated_at', 'version_number']
+
+WARNING: content.content_versions constraint "status IN ('active', 'deprecated')" references unknown column "active"
+  Table columns: ['changelog', 'created_at', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'status', 'subject_id', 'tenant_id', 'updated_at', 'version_number']
+
+WARNING: content.content_versions constraint "status IN ('active', 'deprecated')" references unknown column "deprecated"
+  Table columns: ['changelog', 'created_at', 'deleted_at', 'deprecated_at', 'id', 'published_at', 'status', 'subject_id', 'tenant_id', 'updated_at', 'version_number']
+
+WARNING: content.content_packs constraint "status IN ('draft', 'in_review', 'published', 'rejected')" references unknown column "draft"
+  Table columns: ['artifact_summary', 'author_user_id', 'content_version_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'published_at', 'status', 'updated_at']
+
+WARNING: content.content_packs constraint "status IN ('draft', 'in_review', 'published', 'rejected')" references unknown column "in_review"
+  Table columns: ['artifact_summary', 'author_user_id', 'content_version_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'published_at', 'status', 'updated_at']
+
+WARNING: content.content_packs constraint "status IN ('draft', 'in_review', 'published', 'rejected')" references unknown column "published"
+  Table columns: ['artifact_summary', 'author_user_id', 'content_version_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'published_at', 'status', 'updated_at']
+
+WARNING: content.content_packs constraint "status IN ('draft', 'in_review', 'published', 'rejected')" references unknown column "rejected"
+  Table columns: ['artifact_summary', 'author_user_id', 'content_version_id', 'created_at', 'deleted_at', 'description', 'id', 'name', 'published_at', 'status', 'updated_at']
+
+Check complete.

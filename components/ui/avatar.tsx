@@ -5,6 +5,7 @@ import * as AvatarPrimitive from '@radix-ui/react-avatar'
 
 import { cn } from '@/lib/cn'
 import { getInitials } from '@/lib/format'
+import { generateAvatar } from '@/lib/avatar'
 
 const Avatar = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Root>,
@@ -68,6 +69,55 @@ export function UserAvatar({ name, src, size = 'md', className }: UserAvatarProp
       {src && <AvatarImage src={src} alt={name} />}
       <AvatarFallback>{getInitials(name)}</AvatarFallback>
     </Avatar>
+  )
+}
+
+interface GradientAvatarProps {
+  /** Email used to deterministically pick a gradient and derive initials. */
+  email: string
+  /** Optional display name. When provided, its initials take precedence. */
+  name?: string
+  /** Optional avatar image URL. When provided, renders a `UserAvatar` instead. */
+  src?: string | null
+  size?: 'sm' | 'md' | 'lg' | 'xl'
+  className?: string
+}
+
+/**
+ * Renders a circular avatar with a deterministic gradient background and
+ * centered initials derived from the email (or an optional name).
+ *
+ * If `src` is provided, falls back to the standard `UserAvatar` so that
+ * uploaded profile pictures take priority over generated gradients.
+ */
+export function GradientAvatar({
+  email,
+  name,
+  src,
+  size = 'md',
+  className,
+}: GradientAvatarProps) {
+  if (src) {
+    return <UserAvatar name={name || email} src={src} size={size} className={className} />
+  }
+
+  const generated = generateAvatar(email)
+  const initials = name ? getInitials(name) : generated.initials
+  const displayName = name || email
+
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full font-semibold text-white shadow-sm select-none',
+        sizeMap[size],
+        className,
+      )}
+      style={{ backgroundImage: generated.gradient }}
+      role="img"
+      aria-label={displayName ? `Avatar for ${displayName}` : 'User avatar'}
+    >
+      <span aria-hidden="true">{initials}</span>
+    </div>
   )
 }
 

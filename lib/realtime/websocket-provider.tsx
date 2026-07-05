@@ -77,9 +77,17 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
+    // Get token from localStorage
+    const token = localStorage.getItem('mastery.access_token')
+    if (!token) {
+      setStatus('disconnected')
+      return
+    }
+
     try {
       setStatus(reconnectAttemptRef.current > 0 ? 'reconnecting' : 'connecting')
-      const ws = new WebSocket(WS_URL)
+      const wsUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
+      const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -91,18 +99,21 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       ws.onmessage = (event) => {
         try {
           const msg: WSMessage = JSON.parse(event.data)
+          // Skip ping/pong
+          if (msg.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }))
+            return
+          }
           setLastMessage(msg)
           setMessages((prev) => [...prev.slice(-MAX_MESSAGES_BUFFER + 1), msg])
 
           // Notify subscribers
           const subs = subscribersRef.current.get(msg.type)
           subs?.forEach((handler) => handler(msg))
-
-          // Also notify 'all' subscribers
           const allSubs = subscribersRef.current.get('*' as WSMessageType)
           allSubs?.forEach((handler) => handler(msg))
         } catch {
-          // Ignore non-JSON messages
+          // Ignore non-JSON
         }
       }
 
@@ -113,7 +124,10 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
       ws.onclose = () => {
         setStatus('disconnected')
         stopHeartbeat()
-        scheduleReconnect()
+        // Only reconnect if we haven't exceeded max attempts
+        if (reconnectAttemptRef.current < RECONNECT_DELAYS.length) {
+          scheduleReconnect()
+        }
       }
     } catch {
       setStatus('error')

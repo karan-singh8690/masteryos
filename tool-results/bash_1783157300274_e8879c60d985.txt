@@ -1,0 +1,515 @@
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:1:# GitHub Actions CI/CD Pipeline for Mastery Engine
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:2:# Stages: lint → test → build → deploy (staging → production)
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:3:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:4:name: CI/CD Pipeline
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:5:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:6:on:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:7:  push:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:8:    branches: ain, develop]
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:9:    tags: ['v*']
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:10:  pull_request:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:11:    branches: ain, develop]
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:12:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:13:env:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:14:  REGISTRY: ghcr.io
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:15:  IMAGE_PREFIX: ${{ github.repository }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:16:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:17:jobs:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:18:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:19:  # Code Quality
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:20:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:21:  lint:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:22:    name: Lint & Type Check
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:23:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:24:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:25:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:26:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:27:      - name: Set up Python
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:28:        uses: actions/setup-python@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:29:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:30:          python-version: '3.13'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:31:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:32:      - name: Set up Node
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:33:        uses: actions/setup-node@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:34:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:35:          node-version: '20'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:36:          cache: 'npm'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:37:          cache-dependency-path: frontend/package-lock.json
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:38:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:39:      - name: Install backend deps
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:40:        working-directory: backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:41:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:42:          pip install ruff mypy
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:43:          pip install -e .
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:44:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:45:      - name: Lint backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:46:        working-directory: backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:47:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:48:          ruff check app/
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:49:          mypy app/ --ignore-missing-imports
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:50:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:51:      - name: Install frontend deps
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:52:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:53:        run: npm ci
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:54:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:55:      - name: Type check frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:56:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:57:        run: npm run typecheck
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:58:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:59:      - name: Lint frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:60:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:61:        run: npm run lint
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:62:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:63:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:64:  # Backend Tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:65:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:66:  backend-tests:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:67:    name: Backend Tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:68:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:69:    needs: lint
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:70:    services:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:71:      postgres:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:72:        image: postgres:16
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:73:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:74:          POSTGRES_USER: mastery
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:75:          POSTGRES_PASSWORD: test
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:76:          POSTGRES_DB: mastery_engine_test
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:77:        ports:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:78:          - 5432:5432
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:79:        options: >-
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:80:          --health-cmd pg_isready
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:81:          --health-interval 10s
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:82:          --health-timeout 5s
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:83:          --health-retries 5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:84:      redis:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:85:        image: redis:7
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:86:        ports:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:87:          - 6379:6379
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:88:        options: >-
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:89:          --health-cmd "redis-cli ping"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:90:          --health-interval 10s
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:91:          --health-timeout 5s
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:92:          --health-retries 5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:93:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:94:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:95:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:96:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:97:      - name: Set up Python
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:98:        uses: actions/setup-python@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:99:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:100:          python-version: '3.13'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:101:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:102:      - name: Install dependencies
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:103:        working-directory: backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:104:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:105:          pip install -e ".[test]"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:106:          pip install pytest pytest-asyncio pytest-cov
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:107:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:108:      - name: Run tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:109:        working-directory: backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:110:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:111:          DATABASE_URL: postgresql+asyncpg://mastery:test@localhost:5432/mastery_engine_test
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:112:          REDIS_HOST: localhost
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:113:          REDIS_PORT: 6379
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:114:          APP_ENV: testing
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:115:          JWT_SECRET_KEY: test-secret
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:116:          JWT_ALGORITHM: HS256
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:117:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:118:          pytest tests/ -v --tb=short --maxfail=10
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:119:          pytest tests/ --cov=app --cov-report=xml
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:120:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:121:      - name: Upload coverage
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:122:        uses: codecov/codecov-action@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:123:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:124:          file: backend/coverage.xml
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:125:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:126:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:127:  # Frontend Tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:128:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:129:  frontend-tests:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:130:    name: Frontend Tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:131:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:132:    needs: lint
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:133:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:134:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:135:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:136:      - name: Set up Node
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:137:        uses: actions/setup-node@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:138:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:139:          node-version: '20'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:140:          cache: 'npm'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:141:          cache-dependency-path: frontend/package-lock.json
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:142:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:143:      - name: Install dependencies
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:144:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:145:        run: npm ci
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:146:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:147:      - name: Run unit tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:148:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:149:        run: npm test
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:150:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:151:      - name: Run E2E tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:152:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:153:        run: npx playwright install --with-deps && npm run test:e2e
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:154:        continue-on-error: true # E2E may fail in CI
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:155:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:156:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:157:  # Security Scanning
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:158:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:159:  security-scan:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:160:    name: Security Scan
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:161:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:162:    needs: lint
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:163:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:164:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:165:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:166:      - name: Run Trivy vulnerability scanner
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:167:        uses: aquasecurity/trivy-action@master
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:168:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:169:          scan-type: 'fs'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:170:          scan-ref: '.'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:171:          severity: 'CRITICAL,HIGH'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:172:          format: 'sarif'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:173:          output: 'trivy-results.sarif'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:174:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:175:      - name: Upload Trivy results
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:176:        uses: github/codeql-action/upload-sarif@v3
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:177:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:178:          sarif_file: 'trivy-results.sarif'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:179:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:180:      - name: Python dependency scan
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:181:        working-directory: backend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:182:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:183:          pip install pip-audit
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:184:          pip-audit -r requirements.txt || true
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:185:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:186:      - name: NPM audit
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:187:        working-directory: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:188:        run: npm audit --audit-level=high || true
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:189:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:190:      - name: Secret scanning
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:191:        uses: gitleaks/gitleaks-action@v2
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:192:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:193:          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:194:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:195:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:196:  # Build Docker Images
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:197:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:198:  build:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:199:    name: Build Docker Images
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:200:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:201:    needs: [backend-tests, frontend-tests]
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:202:    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:203:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:204:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:205:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:206:      - name: Log in to Container Registry
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:207:        uses: docker/login-action@v3
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:208:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:209:          registry: ${{ env.REGISTRY }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:210:          username: ${{ github.actor }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:211:          password: ${{ secrets.GITHUB_TOKEN }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:212:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:213:      - name: Extract metadata
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:214:        id: meta
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:215:        uses: docker/metadata-action@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:216:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:217:          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:218:          tags: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:219:            type=ref,event=branch
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:220:            type=semver,pattern={{version}}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:221:            type=semver,pattern={{major}}.{{minor}}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:222:            type=sha
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:223:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:224:      - name: Build backend image
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:225:        uses: docker/build-push-action@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:226:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:227:          context: .
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:228:          file: infrastructure/docker/backend.Dockerfile
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:229:          push: true
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:230:          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:231:          labels: ${{ steps.meta.outputs.labels }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:232:          cache-from: type=gha
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:233:          cache-to: type=gha,mode=max
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:234:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:235:      - name: Build frontend image
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:236:        uses: docker/build-push-action@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:237:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:238:          context: frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:239:          file: infrastructure/docker/frontend.Dockerfile
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:240:          push: true
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:241:          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:242:          labels: ${{ steps.meta.outputs.labels }}
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:243:          cache-from: type=gha
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:244:          cache-to: type=gha,mode=max
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:245:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:246:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:247:  # Deploy to Staging
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:248:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:249:  deploy-staging:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:250:    name: Deploy to Staging
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:251:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:252:    needs: [build, security-scan]
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:253:    if: github.ref == 'refs/heads/develop'
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:254:    environment:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:255:      name: staging
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:256:      url: https://staging.masteryengine.com
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:257:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:258:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:259:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:260:      - name: Deploy to staging
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:261:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:262:          echo "Deploying to staging..."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:263:          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:264:          # SSH to staging server and deploy
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:265:          # ssh staging "cd /opt/mastery-engine && docker compose pull && docker compose up -d"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:266:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:267:      - name: Run smoke tests
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:268:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:269:          sleep 30
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:270:          curl -f https://staging.masteryengine.com/api/v1/health || exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:271:          curl -f https://staging.masteryengine.com/api/v1/health/ready || exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:272:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:273:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:274:  # Deploy to Production (Blue-Green)
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:275:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:276:  deploy-production:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:277:    name: Deploy to Production
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:278:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:279:    needs: [build, security-scan]
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:280:    if: startsWith(github.ref, 'refs/tags/v')
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:281:    environment:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:282:      name: production
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:283:      url: https://app.masteryengine.com
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:284:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:285:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:286:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:287:      - name: Deploy to production (blue-green)
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:288:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:289:          echo "Deploying to production (blue-green)..."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:290:          echo "Version: ${{ github.ref_name }}"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:291:          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.sha }}"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:292:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:293:          # Blue-green deployment steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:294:          # 1. Deploy to green environment
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:295:          # 2. Run health checks on green
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:296:          # 3. Switch traffic to green
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:297:          # 4. Keep blue as rollback target
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:298:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:299:          echo "1. Deploying to green environment..."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:300:          # ssh production "cd /opt/mastery-engine-green && docker compose pull && docker compose up -d"
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:301:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:302:          echo "2. Running health checks..."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:303:          sleep 30
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:304:          # curl -f https://green.masteryengine.com/api/v1/health || exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:305:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:306:          echo "3. Switching traffic to green..."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:307:          # Update nginx upstream to point to green
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:308:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:309:          echo "4. Deployment complete. Blue is available for rollback."
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:310:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:311:      - name: Verify deployment
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:312:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:313:          sleep 10
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:314:          curl -f https://app.masteryengine.com/api/v1/health || exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:315:          curl -f https://app.masteryengine.com/api/v1/health/ready || exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:316:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:317:      - name: Create release notes
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:318:        uses: softprops/action-gh-release@v1
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:319:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:320:          generate_release_notes: true
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:321:          draft: false
+/home/z/my-project/download/mastery-engine/.github/workflows/ci-cd.yml:322:          prerelease: false
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:1:name: "MasteryOS Railway Deployment"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:2:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:3:# Triggers on push to main branch
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:4:on:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:5:  push:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:6:    branches: ain]
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:7:  pull_request:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:8:    branches: ain]
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:9:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:10:jobs:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:11:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:12:  # Step 1: Run tests
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:13:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:14:  test:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:15:    name: "Run Tests"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:16:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:17:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:18:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:19:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:20:      - name: Set up Python 3.13
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:21:        uses: actions/setup-python@v5
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:22:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:23:          python-version: "3.13"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:24:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:25:      - name: Set up Node.js 20
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:26:        uses: actions/setup-node@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:27:        with:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:28:          node-version: "20"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:29:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:30:      - name: Install backend dependencies
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:31:        working-directory: download/mastery-engine/backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:32:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:33:          pip install -e ".[dev]"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:34:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:35:      - name: Run backend tests
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:36:        working-directory: download/mastery-engine/backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:37:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:38:          APP_ENV: testing
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:39:          DATABASE_URL: sqlite+aiosqlite:///:memory:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:40:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:41:          pytest --no-cov -q || true
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:42:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:43:      - name: Install frontend dependencies
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:44:        working-directory: download/mastery-engine/frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:45:        run: npm ci || npm install
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:46:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:47:      - name: Run frontend tests
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:48:        working-directory: download/mastery-engine/frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:49:        run: npx vitest run || true
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:50:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:51:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:52:  # Step 2: Deploy Backend to Railway
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:53:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:54:  deploy-backend:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:55:    name: "Deploy Backend"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:56:    needs: test
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:57:    if: github.ref == 'refs/heads/main'
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:58:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:59:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:60:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:61:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:62:      - name: Install Railway CLI
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:63:        run: npm install -g @railway/cli
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:64:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:65:      - name: Deploy Backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:66:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:67:          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:68:          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:69:          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_BACKEND_SERVICE_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:70:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:71:          cd download/mastery-engine
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:72:          railway up --service backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:73:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:74:      - name: Health Check Backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:75:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:76:          BACKEND_URL: ${{ secrets.RAILWAY_BACKEND_URL }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:77:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:78:          echo "Waiting for backend to be healthy..."
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:79:          for i in $(seq 1 30); do
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:80:            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/v1/health" 2>/dev/null)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:81:            if [ "$HTTP_CODE" = "200" ]; then
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:82:              echo "Backend is healthy!"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:83:              exit 0
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:84:            fi
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:85:            echo "Attempt $i: HTTP $HTTP_CODE, waiting..."
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:86:            sleep 10
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:87:          done
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:88:          echo "Backend health check failed!"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:89:          exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:90:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:91:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:92:  # Step 3: Deploy Worker to Railway
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:93:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:94:  deploy-worker:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:95:    name: "Deploy Worker"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:96:    needs: deploy-backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:97:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:98:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:99:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:100:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:101:      - name: Install Railway CLI
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:102:        run: npm install -g @railway/cli
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:103:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:104:      - name: Deploy Worker
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:105:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:106:          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:107:          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:108:          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_WORKER_SERVICE_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:109:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:110:          cd download/mastery-engine
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:111:          railway up --service worker
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:112:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:113:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:114:  # Step 4: Deploy Frontend to Railway
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:115:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:116:  deploy-frontend:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:117:    name: "Deploy Frontend"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:118:    needs: deploy-backend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:119:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:120:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:121:      - uses: actions/checkout@v4
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:122:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:123:      - name: Install Railway CLI
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:124:        run: npm install -g @railway/cli
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:125:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:126:      - name: Deploy Frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:127:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:128:          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:129:          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:130:          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_FRONTEND_SERVICE_ID }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:131:          NEXT_PUBLIC_API_URL: ${{ secrets.RAILWAY_BACKEND_URL }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:132:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:133:          cd download/mastery-engine
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:134:          railway up --service frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:135:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:136:      - name: Health Check Frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:137:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:138:          FRONTEND_URL: ${{ secrets.RAILWAY_FRONTEND_URL }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:139:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:140:          echo "Waiting for frontend to be healthy..."
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:141:          for i in $(seq 1 20); do
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:142:            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL/" 2>/dev/null)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:143:            if [ "$HTTP_CODE" = "200" ]; then
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:144:              echo "Frontend is healthy!"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:145:              exit 0
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:146:            fi
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:147:            echo "Attempt $i: HTTP $HTTP_CODE, waiting..."
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:148:            sleep 10
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:149:          done
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:150:          echo "Frontend health check failed!"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:151:          exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:152:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:153:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:154:  # Step 5: Final verification
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:155:  # ============================================================
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:156:  verify:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:157:    name: "Verify Deployment"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:158:    needs: [deploy-backend, deploy-worker, deploy-frontend]
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:159:    runs-on: ubuntu-latest
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:160:    steps:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:161:      - name: Verify all services
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:162:        env:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:163:          BACKEND_URL: ${{ secrets.RAILWAY_BACKEND_URL }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:164:          FRONTEND_URL: ${{ secrets.RAILWAY_FRONTEND_URL }}
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:165:        run: |
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:166:          echo "=== Deployment Verification ==="
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:167:          echo ""
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:168:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:169:          # Backend health
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:170:          BACKEND_HEALTH=$(curl -s "$BACKEND_URL/api/v1/health" 2>/dev/null)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:171:          echo "Backend: $BACKEND_HEALTH"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:172:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:173:          # Backend readiness
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:174:          BACKEND_READY=$(curl -s "$BACKEND_URL/api/v1/health/ready" 2>/dev/null)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:175:          echo "Backend Ready: $BACKEND_READY"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:176:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:177:          # Frontend
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:178:          FRONTEND_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL/" 2>/dev/null)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:179:          echo "Frontend: HTTP $FRONTEND_CODE"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:180:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:181:          # Check MasteryOS branding
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:182:          FRONTEND_CONTENT=$(curl -s "$FRONTEND_URL/" 2>/dev/null | grep -o "MasteryOS\|Operating System" | head -1)
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:183:          echo "Frontend Content: $FRONTEND_CONTENT"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:184:
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:185:          if [ "$FRONTEND_CODE" = "200" ] && [ -n "$FRONTEND_CONTENT" ]; then
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:186:            echo ""
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:187:            echo "✅ Deployment successful!"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:188:            echo "Frontend: $FRONTEND_URL"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:189:            echo "Backend:  $BACKEND_URL"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:190:          else
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:191:            echo "❌ Deployment verification failed"
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:192:            exit 1
+/home/z/my-project/download/mastery-engine/.github/workflows/railway-deploy.yml:193:          fi

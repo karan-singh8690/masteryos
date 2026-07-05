@@ -6,6 +6,7 @@ const nextConfig = {
   reactStrictMode: false,
   poweredByHeader: false,
   typescript: {
+    // TODO: Remove after fixing remaining type errors in forms/hooks
     ignoreBuildErrors: true,
   },
   env: {

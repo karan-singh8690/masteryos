@@ -1,0 +1,299 @@
+# Prometheus alert rules — Mastery Engine Closed Beta.
+#
+# These rules cover infrastructure (services down, high error rate, latency)
+# and business metrics (outbox backlog, dead letters, beta capacity).
+#
+# Custom metrics expected from the backend /metrics endpoint:
+#   - mastery_beta_user_count (gauge)
+#   - mastery_beta_dau (gauge)
+#   - mastery_beta_open_feedback (gauge)
+#   - outbox_pending (gauge)
+#   - workers_active (gauge)
+#   - workers_dead (gauge)
+#   - workers_jobs_processed_total (counter)
+#   - workers_jobs_failed_total (counter)
+#   - dead_letter_events_total (counter)
+#   - mastery_backup_last_success_timestamp (gauge)
+#
+# Standard metrics (auto-exposed by Prometheus exporters):
+#   - up (Prometheus)
+#   - pg_up, pg_stat_activity_count (postgres-exporter)
+#   - redis_up, redis_memory_used_bytes (redis-exporter)
+#   - nginx_connections_active (nginx-exporter)
+
+groups:
+  - name: mastery-engine-infrastructure
+    interval: 30s
+    rules:
+      # ====== SERVICE DOWN ======
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 2 minutes."
+
+      - alert: BackendDown
+        expr: up{job="mastery-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Backend is down or unhealthy"
+          description: "Backend healthcheck failing. Users cannot access the platform."
+
+      - alert: WorkerDown
+        expr: up{job="mastery-workers"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Worker metrics endpoint unreachable"
+          description: "Worker may be down. Background jobs not processing."
+
+      - alert: FrontendDown
+        expr: up{job="mastery-frontend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Frontend is down"
+          description: "Frontend healthcheck failing."
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL instance unreachable."
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Redis is down"
+          description: "Redis unreachable. Cache, sessions, rate limiting impacted."
+
+      # ====== HIGH ERROR RATE ======
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+          / sum(rate(http_requests_total[5m])) by (service)
+          > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold 1%) for 5 minutes."
+
+      - alert: CriticalErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+          / sum(rate(http_requests_total[5m])) by (service)
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "CRITICAL: 5xx error rate > 5%"
+          description: "Error rate is {{ $value | humanizePercentage }}. Investigate immediately."
+
+      # ====== HIGH LATENCY ======
+      - alert: HighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_ms_bucket[5m])) by (le, service)
+          ) > 500
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "p95 latency > 500ms on {{ $labels.service }}"
+          description: "Current p95: {{ $value }}ms"
+
+      - alert: CriticalP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_ms_bucket[5m])) by (le, service)
+          ) > 2000
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "CRITICAL: p95 latency > 2s"
+          description: "Users experiencing extreme latency. Current p95: {{ $value }}ms"
+
+      # ====== DATABASE ======
+      - alert: PostgresHighConnections
+        expr: pg_stat_activity_count{datname="mastery_engine"} > 150
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "PostgreSQL connections > 150 (75% of max)"
+          description: "Current connections: {{ $value }}"
+
+      - alert: PostgresConnectionExhaustion
+        expr: pg_stat_activity_count{datname="mastery_engine"} > 180
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "CRITICAL: PostgreSQL connections near exhaustion"
+          description: "Current connections: {{ $value }} / 200"
+
+      # ====== REDIS ======
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Redis memory > 85% of max"
+          description: "Current usage: {{ $value | humanizePercentage }}"
+
+      - alert: RedisEvictionStorm
+        expr: rate(redis_evicted_keys_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Redis evicting keys rapidly"
+          description: "{{ $value }} keys/sec being evicted."
+
+      # ====== WORKERS & OUTBOX ======
+      - alert: OutboxBacklog
+        expr: outbox_pending > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Outbox backlog > 100 events"
+          description: "Worker may be down or unable to keep up. Current: {{ $value }}"
+
+      - alert: OutboxBacklogCritical
+        expr: outbox_pending > 1000
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "CRITICAL: Outbox backlog > 1000 events"
+          description: "Background processing severely degraded. Current: {{ $value }}"
+
+      - alert: DeadLetterAccumulating
+        expr: increase(dead_letter_events_total[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Dead letter events accumulating"
+          description: "{{ $value }} new dead letter events in the last hour."
+
+      - alert: WorkerNoHeartbeat
+        expr: workers_active < 1
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "No active worker heartbeats"
+          description: "No workers have checked in for 2 minutes."
+
+      - alert: WorkerHighFailureRate
+        expr: |
+          rate(workers_jobs_failed_total[5m])
+          / (rate(workers_jobs_processed_total[5m]) + rate(workers_jobs_failed_total[5m]))
+          > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Worker job failure rate > 10%"
+          description: "Current failure rate: {{ $value | humanizePercentage }}"
+
+  - name: mastery-engine-business
+    interval: 60s
+    rules:
+      # ====== CLOSED BETA ======
+      - alert: BetaAlmostFull
+        # Fires when 2 or fewer slots remain. Adjust 20 to match MAX_BETA_USERS.
+        expr: 20 - mastery_beta_user_count <= 2 and 20 - mastery_beta_user_count >= 0
+        for: 1m
+        labels:
+          severity: info
+          team: product
+        annotations:
+          summary: "Closed Beta almost full ({{ $value }} slots remaining)"
+          description: "Consider raising MAX_BETA_USERS or preparing a waitlist."
+
+      - alert: BetaFull
+        expr: mastery_beta_user_count >= 20
+        for: 1m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "Closed Beta is full"
+          description: "No new users can register until MAX_BETA_USERS is raised."
+
+      - alert: FeedbackBacklog
+        expr: mastery_beta_open_feedback > 10
+        for: 1h
+        labels:
+          severity: info
+          team: product
+        annotations:
+          summary: "Beta feedback backlog > 10 open items"
+          description: "{{ $value }} open feedback items need triage."
+
+  - name: mastery-engine-system
+    interval: 60s
+    rules:
+      # ====== BACKUP ======
+      - alert: BackupStale
+        # Fires if no successful backup in 36 hours.
+        expr: time() - mastery_backup_last_success_timestamp > 86400 * 1.5
+        for: 1h
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "No successful backup in > 36 hours"
+          description: "Backup may be failing. Check cron and Slack notifications."
+
+      # ====== CONTAINER (via cAdvisor metrics if available) ======
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Container memory > 85%: {{ $labels.name }}"
+          description: "Sustained high memory for 10 minutes."

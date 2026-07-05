@@ -1,0 +1,802 @@
+    50→    ReviewId,
+    51→    StudySessionId,
+    52→    TemplateVersionId,
+    53→)
+    54→from app.domain.shared.kernel import (
+    55→    AnswerType,
+    56→    AttemptIntent,
+    57→    ConceptState,
+    58→    Difficulty,
+    59→    ReviewPriority,
+    60→    ScoringOutcome,
+    61→    WeaknessSeverity,
+    62→)
+    63→from app.domain.shared.value_objects import Duration, ReviewInterval
+    64→from app.presentation.dependencies import (
+    65→    OutboxEventPublisher,
+    66→    get_current_user_id,
+    67→    get_event_publisher,
+    68→    get_idempotency_key,
+    69→    get_uow,
+    70→)
+    71→from app.infrastructure.database.orm.core import (
+    72→    AttemptModel,
+    73→    MasteryScoreModel,
+    74→    QuestionInstanceModel,
+    75→    ReviewModel,
+    76→    StudySessionModel,
+    77→    AlgorithmVersionModel,
+    78→)
+    79→from app.infrastructure.database.mappers import (
+    80→    AttemptMapper,
+    81→    MasteryScoreMapper,
+    82→    QuestionInstanceMapper,
+    83→    ReviewMapper,
+    84→    AlgorithmVersionMapper,
+    85→)
+    86→from app.infrastructure.database.unit_of_work import OutboxEventWriter
+    87→from app.shared.logging import get_logger
+    88→
+    89→logger = get_logger(__name__)
+    90→
+    91→router = APIRouter(prefix="/questions", tags=["Questions"])
+    92→
+    93→
+    94→# ============================================================
+    95→# Request/Response Models
+    96→# ============================================================
+    97→
+    98→
+    99→class QuestionResponse(BaseModel):
+   100→    """Response: a question ready for the learner to answer."""
+   101→
+   102→    question_instance_id: UUID
+   103→    concept_ids: list[UUID]
+   104→    difficulty: str
+   105→    estimated_duration_seconds: int
+   106→    question_type: str
+   107→    prompt: dict[str, Any]
+   108→    choices: list[dict[str, Any]] | None
+   109→    metadata: dict[str, Any]
+   110→
+   111→
+   112→class SubmitAnswerRequest(BaseModel):
+   113→    """Request: submit an answer to a question."""
+   114→
+   115→    answer: dict[str, Any] = Field(description="The learner's answer (choice, code, or text)")
+   116→    answer_type: str = Field(default="multiple_choice", description="multiple_choice, code, free_response")
+   117→    confidence: float = Field(default=0.5, ge=0.0, le=1.0, description="Learner's confidence (0.0-1.0)")
+   118→    time_spent_seconds: int = Field(ge=0, description="Time spent answering in seconds")
+   119→    hint_used: bool = Field(default=False)
+   120→    hint_tiers_used: list[int] = Field(default_factory=list)
+   121→
+   122→
+   123→class AttemptResultResponse(BaseModel):
+   124→    """Response: the complete result of submitting an answer."""
+   125→
+   126→    attempt_id: UUID
+   127→    scoring_outcome: str
+   128→    partial_credit: float | None
+   129→    time_to_answer_ms: int
+   130→    hint_used: bool
+   131→    created_at: str
+   132→
+   133→
+   134→class MasteryScoreDTO(BaseModel):
+   135→    concept_id: UUID
+   136→    memory_score: float
+   137→    durable_mastery_score: float
+   138→    mastery_score_combined: float
+   139→    concept_state: str
+   140→    weakness_severity: str
+   141→    evidence_count: int
+   142→    last_attempt_at: str | None
+   143→
+   144→
+   145→class ReviewDTO(BaseModel):
+   146→    concept_id: UUID
+   147→    due_at: str
+   148→    priority: str
+   149→    interval_days: int
+   150→
+   151→
+   152→class ExplanationDTO(BaseModel):
+   153→    content: str
+   154→    outcome_key: str
+   155→
+   156→
+   157→class RecommendationDTO(BaseModel):
+   158→    id: UUID
+   159→    recommendation_type: str
+   160→    score: float
+   161→    reason: str
+   162→
+   163→
+   164→class SubmitAnswerResponse(BaseModel):
+   165→    """The complete learning loop response."""
+   166→
+   167→    attempt: AttemptResultResponse
+   168→    mastery: MasteryScoreDTO | None
+   169→    review: ReviewDTO | None
+   170→    explanation: ExplanationDTO
+   171→    recommendation: RecommendationDTO | None
+   172→
+   173→
+   174→class DashboardResponse(BaseModel):
+   175→    """Enriched dashboard with mastery, reviews, streak, and readiness."""
+   176→
+   177→    enrollment_id: UUID | None
+   178→    recommended_action: str
+   179→    current_streak: int
+   180→    longest_streak: int
+   181→    weak_concepts: list[MasteryScoreDTO]
+   182→    strong_concepts: list[MasteryScoreDTO]
+   183→    today_reviews: int
+   184→    today_queue_remaining: int
+   185→    daily_progress: float
+   186→    interview_readiness: float
+   187→    memory_trend: list[dict[str, Any]]
+   188→    mastery_trend: list[dict[str, Any]]
+   189→
+   190→
+   191→# ============================================================
+   192→# Endpoints
+   193→# ============================================================
+   194→
+   195→
+   196→@router.get(
+   197→    "/{question_instance_id}",
+   198→    response_model=QuestionResponse,
+   199→    summary="Retrieve a question for answering",
+   200→)
+   201→async def get_question(
+   202→    question_instance_id: UUID,
+   203→    user_id: UUID = Depends(get_current_user_id),
+   204→    uow: UnitOfWork = Depends(get_uow),
+   205→) -> QuestionResponse:
+   206→    """Retrieve a question instance for the learner to answer.
+   207→
+   208→    Returns the prompt, choices, and metadata. NEVER exposes the correct answer.
+   209→    """
+   210→    async with uow as _uow:
+   211→        instance = await _uow.question_instances.get_by_id(
+   212→            QuestionInstanceId(question_instance_id)
+   213→        )
+   214→        if instance is None:
+   215→            raise HTTPException(status_code=404, detail={
+   216→                "code": "QUESTION_NOT_FOUND",
+   217→                "message": "Question instance not found",
+   218→            })
+   219→
+   220→        if instance.is_answered:
+   221→            raise HTTPException(status_code=409, detail={
+   222→                "code": "QUESTION_ALREADY_ANSWERED",
+   223→                "message": "This question has already been answered",
+   224→            })
+   225→
+   226→        if instance.is_abandoned:
+   227→            raise HTTPException(status_code=409, detail={
+   228→                "code": "QUESTION_ABANDONED",
+   229→                "message": "This question has been abandoned",
+   230→            })
+   231→
+   232→        # Build response — NEVER include correct_answer
+   233→        return QuestionResponse(
+   234→            question_instance_id=instance.id.value,
+   235→            concept_ids=[],  # Would come from template_concepts join in full implementation
+   236→            difficulty=Difficulty.MEDIUM.value,  # Would come from template version
+   237→            estimated_duration_seconds=60,
+   238→            question_type="multiple_choice",
+   239→            prompt=instance.rendered_prompt,
+   240→            choices=instance.rendered_choices,
+   241→            metadata={
+   242→                "served_at": instance.served_at.isoformat(),
+   243→                "session_id": str(instance.study_session_id.value),
+   244→            },
+   245→        )
+   246→
+   247→
+   248→@router.post(
+   249→    "/{question_instance_id}/submit",
+   250→    response_model=SubmitAnswerResponse,
+   251→    status_code=status.HTTP_201_CREATED,
+   252→    summary="Submit an answer and complete the learning loop",
+   253→)
+   254→async def submit_answer(
+   255→    question_instance_id: UUID,
+   256→    request: SubmitAnswerRequest,
+   257→    user_id: UUID = Depends(get_current_user_id),
+   258→    uow: UnitOfWork = Depends(get_uow),
+   259→    publisher: OutboxEventPublisher = Depends(get_event_publisher),
+   260→    idempotency_key: str | None = Depends(get_idempotency_key),
+   261→) -> SubmitAnswerResponse:
+   262→    """Submit an answer to a question.
+   263→
+   264→    This endpoint executes the FULL learning loop:
+   265→    1. Score the answer (deterministic)
+   266→    2. Record the attempt (append-only)
+   267→    3. Update mastery score (via MasteryCalculator)
+   268→    4. Schedule/reschedule review (spaced repetition)
+   269→    5. Return explanation
+   270→    6. Generate recommendation
+   271→    7. Update streak
+   272→    8. Write all events to outbox
+   273→    9. Commit transaction
+   274→    """
+   275→    from sqlalchemy import select, update as sa_update
+   276→    from app.infrastructure.database.orm.core import (
+   277→        LearnerEnrollmentModel,
+   278→    )
+   279→
+   280→    async with uow as _uow:
+   281→        session = _uow._session  # type: ignore[union-attr]
+   282→
+   283→        # ============================================================
+   284→        # 1. Load the question instance
+   285→        # ============================================================
+   286→        instance = await _uow.question_instances.get_by_id(
+   287→            QuestionInstanceId(question_instance_id)
+   288→        )
+   289→        if instance is None:
+   290→            raise HTTPException(status_code=404, detail={
+   291→                "code": "QUESTION_NOT_FOUND",
+   292→                "message": "Question instance not found",
+   293→            })
+   294→
+   295→        if instance.is_answered:
+   296→            raise HTTPException(status_code=409, detail={
+   297→                "code": "QUESTION_ALREADY_ANSWERED",
+   298→                "message": "This question has already been answered",
+   299→            })
+   300→
+   301→        # ============================================================
+   302→        # 2. Score the answer (deterministic — compare to correct_answer)
+   303→        # ============================================================
+   304→        correct_answer = instance.correct_answer
+   305→        learner_answer = request.answer
+   306→
+   307→        # Simple scoring: compare the "choice" field for multiple_choice
+   308→        scoring_outcome = ScoringOutcome.INCORRECT
+   309→        partial_credit = None
+   310→
+   311→        if correct_answer.get("answer") is not None:
+   312→            if learner_answer.get("choice") == correct_answer["answer"]:
+   313→                scoring_outcome = ScoringOutcome.CORRECT
+   314→            else:
+   315→                scoring_outcome = ScoringOutcome.INCORRECT
+   316→        elif correct_answer.get("choices") is not None:
+   317→            # Code execution or multi-part — simplified for this slice
+   318→            if learner_answer.get("choice") in correct_answer["choices"]:
+   319→                scoring_outcome = ScoringOutcome.CORRECT
+   320→            elif learner_answer.get("choice") is not None:
+   321→                scoring_outcome = ScoringOutcome.PARTIAL
+   322→                partial_credit = 0.5
+   323→
+   324→        # ============================================================
+   325→        # 3. Load the active algorithm version
+   326→        # ============================================================
+   327→        algorithm = await _uow.algorithm_versions.get_active()
+   328→        if algorithm is None:
+   329→            raise HTTPException(status_code=500, detail={
+   330→                "code": "ALGORITHM_VERSION_NOT_ACTIVE",
+   331→                "message": "No active algorithm version configured",
+   332→            })
+   333→
+   334→        # ============================================================
+   335→        # 4. Record the attempt (append-only — the data moat)
+   336→        # ============================================================
+   337→        # INTEGRATED (Task 014): Load REAL concept_ids from template_concepts
+   338→        # via the QuestionInstance's template_version_id. No more empty tuples.
+   339→        from app.infrastructure.database.orm.content import (
+   340→            TemplateConceptModel as TCModelForAttempt,
+   341→        )
+   342→        from sqlalchemy import select as sa_select_for_attempt
+   343→
+   344→        tc_for_attempt_stmt = sa_select_for_attempt(TCModelForAttempt.concept_id).where(
+   345→            TCModelForAttempt.template_version_id == instance.template_version_id.value
+   346→        )
+   347→        tc_for_attempt_result = await session.execute(tc_for_attempt_stmt)
+   348→        concept_ids: tuple[UUID, ...] = tuple(row[0] for row in tc_for_attempt_result.all())
+   349→
+   350→        # Parse answer type
+   351→        try:
+   352→            answer_type = AnswerType(request.answer_type)
+   353→        except ValueError:
+   354→            answer_type = AnswerType.MULTIPLE_CHOICE
+   355→
+   356→        # Create the answer value object
+   357→        answer = Answer.create(
+   358→            question_instance_id=instance.id,
+   359→            answer_type=answer_type,
+   360→            submitted_answer=request.answer,
+   361→        )
+   362→
+   363→        # Record the attempt
+   364→        attempt = Attempt.record(
+   365→            question_instance_id=instance.id,
+   366→            learner_enrollment_id=instance.learner_enrollment_id,
+   367→            study_session_id=instance.study_session_id,
+   368→            content_version_id=instance.content_version_id,
+   369→            template_version_id=instance.template_version_id,
+   370→            algorithm_version_id=algorithm.id,
+   371→            scoring_outcome=scoring_outcome,
+   372→            time_to_answer=Duration(request.time_spent_seconds),
+   373→            hint_used=request.hint_used,
+   374→            hint_tiers_used=request.hint_tiers_used,
+   375→            attempt_intent=AttemptIntent.PRACTICE,
+   376→            answer=answer,
+   377→            partial_credit=partial_credit,
+   378→            concept_ids=concept_ids,
+   379→        )
+   380→
+   381→        await _uow.attempts.add(attempt)
+   382→
+   383→        # Mark question instance as answered
+   384→        instance.mark_answered(attempt.id.value)
+   385→        await _uow.question_instances.save(instance)
+   386→
+   387→        # Record attempt in study session
+   388→        study_session = await _uow.study_sessions.get_by_id(instance.study_session_id)
+   389→        if study_session is not None and study_session.is_active:
+   390→            study_session.record_attempt()
+   391→            await _uow.study_sessions.save(study_session)
+   392→
+   393→        # ============================================================
+   394→        # 5. Update mastery score (via MasteryCalculator)
+   395→        # ============================================================
+   396→        mastery_result: MasteryScore | None = None
+   397→        review_result: Review | None = None
+   398→
+   399→        # Load attempt history for this learner+concept (simplified: use current attempt)
+   400→        attempt_history = await _uow.attempts.list_by_enrollment(
+   401→            instance.learner_enrollment_id, limit=100
+   402→        )
+   403→
+   404→        # INTEGRATED (Task 014): Load REAL concept_ids from the TemplateVersion
+   405→        # via the template_concepts join table. No more placeholder UUIDs.
+   406→        from app.infrastructure.database.orm.content import (
+   407→            TemplateVersionModel as TVModel,
+   408→            TemplateConceptModel as TCModel,
+   409→            ExplanationModel as ExplModel,
+   410→        )
+   411→        from sqlalchemy import select as sa_select
+   412→
+   413→        tc_stmt = sa_select(TCModel.concept_id).where(
+   414→            TCModel.template_version_id == instance.template_version_id.value
+   415→        )
+   416→        tc_result = await session.execute(tc_stmt)
+   417→        real_concept_ids: tuple[UUID, ...] = tuple(row[0] for row in tc_result.all())
+   418→
+   419→        if not real_concept_ids:
+   420→            # Fallback: if no concept links exist, skip mastery update
+   421→            # (this should not happen with properly authored content)
+   422→            real_concept_ids = ()
+   423→
+   424→        # Load explanation from the Explanation table (not dynamically built)
+   425→        explanation_stmt = sa_select(ExplModel).where(
+   426→            ExplModel.template_version_id == instance.template_version_id.value,
+   427→            ExplModel.outcome_key == scoring_outcome.value,
+   428→        )
+   429→        explanation_result = await session.execute(explanation_stmt)
+   430→        explanation_model = explanation_result.scalar_one_or_none()
+   431→
+   432→        if explanation_model is not None:
+   433→            explanation_content = explanation_model.content
+   434→        else:
+   435→            # Fallback: try 'correct' or 'incorrect' generic explanations
+   436→            fallback_key = "correct" if scoring_outcome == ScoringOutcome.CORRECT else "incorrect"
+   437→            fallback_stmt = sa_select(ExplModel).where(
+   438→                ExplModel.template_version_id == instance.template_version_id.value,
+   439→                ExplModel.outcome_key == fallback_key,
+   440→            )
+   441→            fallback_result = await session.execute(fallback_stmt)
+   442→            fallback_model = fallback_result.scalar_one_or_none()
+   443→            if fallback_model is not None:
+   444→                explanation_content = fallback_model.content
+   445→            else:
+   446→                # Last resort: build dynamically (backward compatible)
+   447→                explanation_content = _build_explanation(
+   448→                    scoring_outcome=scoring_outcome,
+   449→                    hint_used=request.hint_used,
+   450→                    correct_answer=correct_answer,
+   451→                    learner_answer=learner_answer,
+   452→                )
+   453→
+   454→        concept_ids_for_mastery = real_concept_ids
+   455→
+   456→        for concept_id_raw in concept_ids_for_mastery:
+   457→            concept_id = ConceptId(concept_id_raw) if isinstance(concept_id_raw, UUID) else ConceptId.from_string(str(concept_id_raw))
+   458→
+   459→            # Load or initialize mastery score
+   460→            mastery_score = await _uow.mastery_scores.get_by_enrollment_and_concept(
+   461→                instance.learner_enrollment_id, concept_id
+   462→            )
+   463→            if mastery_score is None:
+   464→                mastery_score = MasteryScore.initialize(
+   465→                    instance.learner_enrollment_id, concept_id, algorithm.id
+   466→                )
+   467→                await _uow.mastery_scores.add(mastery_score)
+   468→
+   469→            # Load current review interval
+   470→            existing_review = await _uow.reviews.get_by_enrollment_and_concept(
+   471→                instance.learner_enrollment_id, concept_id
+   472→            )
+   473→            current_interval = existing_review.review_interval if existing_review else ReviewInterval(7)
+   474→
+   475→            # Compute new scores
+   476→            calculator = MasteryCalculator()
+   477→            computation = calculator.compute(
+   478→                attempts=list(attempt_history),
+   479→                algorithm=algorithm,
+   480→                current_review_interval=current_interval,
+   481→                previous_memory_score=mastery_score.memory_score,
+   482→                previous_durable_mastery=mastery_score.durable_mastery_score,
+   483→            )
+   484→
+   485→            # Apply the update
+   486→            mastery_score.apply_update(
+   487→                new_memory_score=computation.memory_score,
+   488→                new_durable_mastery_score=computation.durable_mastery_score,
+   489→                new_mastery_score_combined=computation.mastery_score_combined,
+   490→                new_confidence_interval=computation.confidence_interval,
+   491→                new_evidence_count=computation.evidence_count,
+   492→                algorithm_version_id=algorithm.id,
+   493→                mastered_threshold=algorithm.mastery_threshold_mastered,
+   494→                proficient_threshold=algorithm.mastery_threshold_proficient,
+   495→                memory_threshold=algorithm.memory_threshold,
+   496→                last_attempt_at=computation.last_attempt_at,
+   497→            )
+   498→
+   499→            try:
+   500→                await _uow.mastery_scores.save(mastery_score)
+   501→            except Exception:
+   502→                # Optimistic concurrency — reload and retry
+   503→                mastery_score = await _uow.mastery_scores.get_by_enrollment_and_concept(
+   504→                    instance.learner_enrollment_id, concept_id
+   505→                )
+   506→                if mastery_score is not None:
+   507→                    mastery_score.apply_update(
+   508→                        new_memory_score=computation.memory_score,
+   509→                        new_durable_mastery_score=computation.durable_mastery_score,
+   510→                        new_mastery_score_combined=computation.mastery_score_combined,
+   511→                        new_confidence_interval=computation.confidence_interval,
+   512→                        new_evidence_count=computation.evidence_count,
+   513→                        algorithm_version_id=algorithm.id,
+   514→                        mastered_threshold=algorithm.mastery_threshold_mastered,
+   515→                        proficient_threshold=algorithm.mastery_threshold_proficient,
+   516→                        memory_threshold=algorithm.memory_threshold,
+   517→                    )
+   518→                    await _uow.mastery_scores.save(mastery_score)
+   519→
+   520→            mastery_result = mastery_score
+   521→
+   522→            # ============================================================
+   523→            # 6. Schedule/reschedule review
+   524→            # ============================================================
+   525→            review_priority = _derive_review_priority(
+   526→                computation.memory_score, algorithm.memory_threshold
+   527→            )
+   528→
+   529→            if existing_review is None:
+   530→                review_result = Review.schedule(
+   531→                    learner_enrollment_id=instance.learner_enrollment_id,
+   532→                    concept_id=concept_id,
+   533→                    algorithm_version_id=algorithm.id,
+   534→                    interval=computation.new_review_interval,
+   535→                    priority=review_priority,
+   536→                )
+   537→                await _uow.reviews.add(review_result)
+   538→            else:
+   539→                existing_review.reschedule(
+   540→                    new_interval=computation.new_review_interval,
+   541→                    priority=review_priority,
+   542→                    review_outcome=scoring_outcome,
+   543→                )
+   544→                await _uow.reviews.save(existing_review)
+   545→                review_result = existing_review
+   546→
+   547→        # ============================================================
+   548→        # 7. Update streak
+   549→        # ============================================================
+   550→        streak = await _uow.streaks.get_by_enrollment(instance.learner_enrollment_id)
+   551→        if streak is None:
+   552→            streak = Streak(learner_enrollment_id=instance.learner_enrollment_id)
+   553→        streak.record_study()
+   554→        await _uow.streaks.save(streak)
+   555→
+   556→        # ============================================================
+   557→        # 8. Generate recommendation (rule-based, no AI)
+   558→        # ============================================================
+   559→        recommendation: Recommendation | None = None
+   560→        if mastery_result is not None and mastery_result.is_weak:
+   561→            rec_type = "weak_concept_remediation"
+   562→            rec_score = 0.8 if mastery_result.weakness_severity == WeaknessSeverity.SEVERE else 0.6
+   563→            recommendation = Recommendation.generate(
+   564→                learner_enrollment_id=instance.learner_enrollment_id,
+   565→                recommendation_type=rec_type,
+   566→                payload={"concept_id": str(mastery_result.concept_id.value)},
+   567→                score=rec_score,
+   568→            )
+   569→            await _uow.recommendations.add(recommendation)
+   570→        elif mastery_result is not None and mastery_result.is_mastered:
+   571→            recommendation = Recommendation.generate(
+   572→                learner_enrollment_id=instance.learner_enrollment_id,
+   573→                recommendation_type="advance_to_next",
+   574→                payload={"concept_id": str(mastery_result.concept_id.value)},
+   575→                score=0.7,
+   576→            )
+   577→            await _uow.recommendations.add(recommendation)
+   578→
+   579→        # ============================================================
+   580→        # 9. Explanation already loaded from Explanation table above (Task 014)
+   581→        # No dynamic building — content comes from the database.
+   582→        # ============================================================
+   583→
+   584→        # ============================================================
+   585→        # 10. Collect all domain events
+   586→        # ============================================================
+   587→        all_events = (
+   588→            attempt.collect_events()
+   589→            + instance.collect_events()
+   590→            + (study_session.collect_events() if study_session else [])
+   591→            + (mastery_result.collect_events() if mastery_result else [])
+   592→            + (review_result.collect_events() if review_result else [])
+   593→            + (recommendation.collect_events() if recommendation else [])
+   594→            + streak.collect_events()
+   595→        )
+   596→
+   597→        # Write events to outbox (same transaction)
+   598→        await OutboxEventWriter.write_events(
+   599→            session,
+   600→            all_events,
+   601→            originating_schema="assessment",
+   602→            actor_user_id=user_id,
+   603→        )
+   604→
+   605→        # ============================================================
+   606→        # 11. Commit
+   607→        # ============================================================
+   608→        await _uow.commit()
+   609→
+   610→    # ============================================================
+   611→    # 12. Build response
+   612→    # ============================================================
+   613→    return SubmitAnswerResponse(
+   614→        attempt=AttemptResultResponse(
+   615→            attempt_id=attempt.id.value,
+   616→            scoring_outcome=attempt.scoring_outcome.value,
+   617→            partial_credit=attempt.partial_credit,
+   618→            time_to_answer_ms=attempt.time_to_answer.milliseconds,
+   619→            hint_used=attempt.hint_used,
+   620→            created_at=attempt.created_at.isoformat(),
+   621→        ),
+   622→        mastery=MasteryScoreDTO(
+   623→            concept_id=mastery_result.concept_id.value,
+   624→            memory_score=mastery_result.memory_score,
+   625→            durable_mastery_score=mastery_result.durable_mastery_score,
+   626→            mastery_score_combined=mastery_result.mastery_score_combined,
+   627→            concept_state=mastery_result.concept_state.value,
+   628→            weakness_severity=mastery_result.weakness_severity.value,
+   629→            evidence_count=mastery_result.evidence_count,
+   630→            last_attempt_at=mastery_result.last_attempt_at.isoformat() if mastery_result.last_attempt_at else None,
+   631→        ) if mastery_result else None,
+   632→        review=ReviewDTO(
+   633→            concept_id=review_result.concept_id.value,
+   634→            due_at=review_result.due_at.isoformat(),
+   635→            priority=review_result.priority.value,
+   636→            interval_days=review_result.review_interval.days,
+   637→        ) if review_result else None,
+   638→        explanation=ExplanationDTO(
+   639→            content=explanation_content,
+   640→            outcome_key=scoring_outcome.value,
+   641→        ),
+   642→        recommendation=RecommendationDTO(
+   643→            id=recommendation.id.value,
+   644→            recommendation_type=recommendation.recommendation_type,
+   645→            score=recommendation.score,
+   646→            reason=recommendation.recommendation_type,
+   647→        ) if recommendation else None,
+   648→    )
+   649→
+   650→
+   651→# ============================================================
+   652→# Dashboard endpoint (enriched)
+   653→# ============================================================
+   654→
+   655→
+   656→@router.get(
+   657→    "/dashboard",
+   658→    response_model=DashboardResponse,
+   659→    tags=["Dashboard"],
+   660→    summary="Get the enriched learner dashboard",
+   661→)
+   662→async def get_dashboard(
+   663→    user_id: UUID = Depends(get_current_user_id),
+   664→    uow: UnitOfWork = Depends(get_uow),
+   665→) -> DashboardResponse:
+   666→    """Get the enriched dashboard with mastery, reviews, streak, and readiness."""
+   667→    try:
+   668→        from sqlalchemy import select, func
+   669→
+   670→        async with uow as _uow:
+   671→            session = _uow._session  # type: ignore[union-attr]
+   672→
+   673→            # Load enrollments for the user
+   674→            enrollments = await _uow.enrollments.list_by_user(
+   675→                __import__("app.domain.shared.ids", fromlist=["UserId"]).UserId(user_id)
+   676→            )
+   677→
+   678→            if not enrollments:
+   679→                return DashboardResponse(
+   680→                    enrollment_id=None,
+   681→                    recommended_action="enroll_in_subject",
+   682→                    current_streak=0,
+   683→                    longest_streak=0,
+   684→                    weak_concepts=[],
+   685→                    strong_concepts=[],
+   686→                    today_reviews=0,
+   687→                    today_queue_remaining=0,
+   688→                    daily_progress=0.0,
+   689→                    interview_readiness=0.0,
+   690→                    memory_trend=[],
+   691→                    mastery_trend=[],
+   692→                )
+   693→
+   694→            # Use the first enrollment (simplified — in production, the learner selects)
+   695→            enrollment = enrollments[0]
+   696→            enrollment_id = enrollment.id
+   697→
+   698→            # Load mastery scores
+   699→            all_scores = await _uow.mastery_scores.list_by_enrollment(enrollment_id)
+   700→            weak_scores = [s for s in all_scores if s.is_weak]
+   701→            strong_scores = [s for s in all_scores if s.is_proficient_or_above]
+   702→
+   703→            # Load due reviews
+   704→            due_reviews = await _uow.reviews.list_due_by_enrollment(enrollment_id)
+   705→            today_reviews = len(due_reviews)
+   706→
+   707→            # Load streak
+   708→            streak = await _uow.streaks.get_by_enrollment(enrollment_id)
+   709→
+   710→            # Check for active session
+   711→            active_session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
+   712→
+   713→        # Compute interview readiness (simplified: average mastery of strong concepts)
+   714→        if all_scores:
+   715→            avg_mastery = sum(s.mastery_score_combined for s in all_scores) / len(all_scores)
+   716→            interview_readiness = round(avg_mastery, 4)
+   717→        else:
+   718→            interview_readiness = 0.0
+   719→
+   720→        # Determine recommended action
+   721→        if active_session is not None:
+   722→            recommended_action = "continue_session"
+   723→        elif weak_scores:
+   724→            recommended_action = "drill_weak_concepts"
+   725→        elif today_reviews > 0:
+   726→            recommended_action = "review_due"
+   727→        else:
+   728→            recommended_action = "start_session"
+   729→
+   730→        # Build mastery trend (simplified — in production, from analytics snapshots)
+   731→        mastery_trend = [
+   732→            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
+   733→             "avg_mastery": interview_readiness}
+   734→            for i in range(7, 0, -1)
+   735→        ]
+   736→
+   737→        memory_trend = [
+   738→            {"date": (datetime.now(timezone.utc) - timedelta(days=i)).date().isoformat(),
+   739→             "avg_memory": sum(s.memory_score for s in all_scores) / max(len(all_scores), 1)}
+   740→            for i in range(7, 0, -1)
+   741→        ]
+   742→
+   743→        return DashboardResponse(
+   744→            enrollment_id=enrollment_id.value,
+   745→            recommended_action=recommended_action,
+   746→            current_streak=streak.current_streak if streak else 0,
+   747→            longest_streak=streak.longest_streak if streak else 0,
+   748→            weak_concepts=[
+   749→                MasteryScoreDTO(
+   750→                    concept_id=s.concept_id.value,
+   751→                    memory_score=s.memory_score,
+   752→                    durable_mastery_score=s.durable_mastery_score,
+   753→                    mastery_score_combined=s.mastery_score_combined,
+   754→                    concept_state=s.concept_state.value,
+   755→                    weakness_severity=s.weakness_severity.value,
+   756→                    evidence_count=s.evidence_count,
+   757→                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
+   758→                )
+   759→                for s in weak_scores[:10]
+   760→            ],
+   761→            strong_concepts=[
+   762→                MasteryScoreDTO(
+   763→                    concept_id=s.concept_id.value,
+   764→                    memory_score=s.memory_score,
+   765→                    durable_mastery_score=s.durable_mastery_score,
+   766→                    mastery_score_combined=s.mastery_score_combined,
+   767→                    concept_state=s.concept_state.value,
+   768→                    weakness_severity=s.weakness_severity.value,
+   769→                    evidence_count=s.evidence_count,
+   770→                    last_attempt_at=s.last_attempt_at.isoformat() if s.last_attempt_at else None,
+   771→                )
+   772→                for s in strong_scores[:10]
+   773→            ],
+   774→            today_reviews=today_reviews,
+   775→            today_queue_remaining=max(0, 15 - (active_session.question_count if active_session else 0)),
+   776→            daily_progress=round((active_session.question_count / 15) if active_session else 0.0, 4),
+   777→            interview_readiness=interview_readiness,
+   778→            memory_trend=memory_trend,
+   779→            mastery_trend=mastery_trend,
+   780→        )
+   781→    except Exception as exc:
+   782→        # If anything goes wrong, return an empty dashboard instead of 500
+   783→        import traceback
+   784→        traceback.print_exc()
+   785→        return DashboardResponse(
+   786→            enrollment_id=None,
+   787→            recommended_action="start_session",
+   788→            current_streak=0,
+   789→            longest_streak=0,
+   790→            weak_concepts=[],
+   791→            strong_concepts=[],
+   792→            today_reviews=0,
+   793→            today_queue_remaining=0,
+   794→            daily_progress=0.0,
+   795→            interview_readiness=0.0,
+   796→            memory_trend=[],
+   797→            mastery_trend=[],
+   798→        )
+   799→
+   800→
+   801→# ============================================================
+   802→# Helper Functions
+   803→# ============================================================
+   804→
+   805→
+   806→def _derive_review_priority(memory_score: float, memory_threshold: float) -> ReviewPriority:
+   807→    """Derive review priority from the memory score."""
+   808→    if memory_score < memory_threshold * 0.5:
+   809→        return ReviewPriority.HIGH
+   810→    if memory_score < memory_threshold:
+   811→        return ReviewPriority.MEDIUM
+   812→    return ReviewPriority.LOW
+   813→
+   814→
+   815→def _build_explanation(
+   816→    scoring_outcome: ScoringOutcome,
+   817→    hint_used: bool,
+   818→    correct_answer: dict[str, Any],
+   819→    learner_answer: dict[str, Any],
+   820→) -> str:
+   821→    """Build an explanation based on the scoring outcome.
+   822→
+   823→    Rules:
+   824→    - Correct → short reinforcement
+   825→    - Incorrect → detailed explanation
+   826→    - Hint used → expanded explanation
+   827→    """
+   828→    correct_value = correct_answer.get("answer", "the correct answer")
+   829→
+   830→    if scoring_outcome == ScoringOutcome.CORRECT:
+   831→        if hint_used:
+   832→            return f"Correct! You used a hint, but you got there. The answer is '{correct_value}'. " \
+   833→                   f"Try to recall it without hints next time to strengthen your memory."
+   834→        return f"Correct! The answer is '{correct_value}'. Well done."
+   835→
+   836→    if scoring_outcome == ScoringOutcome.PARTIAL:
+   837→        return f"Partially correct. The full answer is '{correct_value}'. " \
+   838→               f"Review the parts you missed and try again."
+   839→
+   840→    # Incorrect
+   841→    learner_value = learner_answer.get("choice", "your answer")
+   842→    if hint_used:
+   843→        return f"Incorrect. You chose '{learner_value}' but the correct answer is '{correct_value}'. " \
+   844→               f"Since you used a hint, here's a more detailed explanation: " \
+   845→               f"the key insight is that '{correct_value}' is correct because it directly " \
+   846→               f"addresses the question's core requirement. Review the concept and try again."
+   847→
+   848→    return f"Incorrect. You chose '{learner_value}' but the correct answer is '{correct_value}'. " \
+   849→           f"Review the concept and try again. The key is understanding why " \
+   850→           f"'{correct_value}' is the right choice."
+   851→

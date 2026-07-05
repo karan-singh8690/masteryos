@@ -38,7 +38,7 @@ jobs:
           APP_ENV: testing
           DATABASE_URL: sqlite+aiosqlite:///:memory:
         run: |
-          pytest --no-cov -q || true
+          pytest --no-cov -q
 
       - name: Install frontend dependencies
         working-directory: download/mastery-engine/frontend
@@ -46,7 +46,7 @@ jobs:
 
       - name: Run frontend tests
         working-directory: download/mastery-engine/frontend
-        run: npx vitest run || true
+        run: npx vitest run
 
   # ============================================================
   # Step 2: Deploy Backend to Railway
