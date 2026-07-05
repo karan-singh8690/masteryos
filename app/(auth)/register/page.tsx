@@ -64,8 +64,8 @@ export default function RegisterPage() {
       // Set auth cookie for middleware
       document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
       setUser(response.user)
-      toast.success('Account created! Please verify your email.')
-      router.push(ROUTES.VERIFY_EMAIL)
+      toast.success('Account created! Welcome to MasteryOS.')
+      router.push(ROUTES.DASHBOARD)
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'EMAIL_ALREADY_REGISTERED') {

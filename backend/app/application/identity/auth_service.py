@@ -244,8 +244,8 @@ class ProductionAuthService:
         user_model = UserModel(
             id=user_id,
             email=email_vo.value,
-            email_verified_at=None,
-            status="pending_verification",
+            email_verified_at=now,  # Auto-verify (SMTP not configured in beta)
+            status="active",  # Set to active immediately (skip email verification)
             mfa_enabled=False,
         )
         session.add(user_model)
