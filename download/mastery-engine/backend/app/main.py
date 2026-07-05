@@ -48,6 +48,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("sentry_not_configured")
 
     await init_database()
+    logger.info("database_initialized")
+
+    # Initialize Redis cache (Task 024: platform hardening)
+    try:
+        import redis.asyncio as aioredis
+        from app.infrastructure.cache.redis_cache import init_cache
+        redis_client = aioredis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+        )
+        await redis_client.ping()
+        await init_cache(redis_client)
+        logger.info("redis_cache_initialized")
+    except Exception as exc:
+        logger.warning("redis_cache_init_skipped", error=str(exc))
+
     logger.info("application_started")
 
     yield
@@ -94,6 +111,13 @@ def create_app() -> FastAPI:
     app.add_middleware(CSRFMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
+    # Performance middleware (Task 024: compression + ETag)
+    from app.infrastructure.performance.middleware import (
+        CompressionMiddleware,
+        ETagMiddleware,
+    )
+    app.add_middleware(ETagMiddleware)
+    app.add_middleware(CompressionMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -119,6 +143,10 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.beta import router as beta_router
     # Task 026: Closed Beta Operations Platform router (admin-only analytics + ops endpoints).
     from app.presentation.api.v1.beta_ops import router as beta_ops_router
+    # Task 023: AI Intelligence Platform router
+    from app.presentation.api.v1.ai import router as ai_router
+    # Learner portal endpoints (dashboard, mastery, reviews, recommendations, achievements, notifications)
+    from app.presentation.api.v1.learner import router as learner_router
     # Task 025-deploy: import beta_templates so its email templates register
     # into the TEMPLATES dict at app startup.
     from app.infrastructure.email import beta_templates  # noqa: F401
@@ -131,6 +159,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix="/api/v1")
     app.include_router(beta_router, prefix="/api/v1")
     app.include_router(beta_ops_router, prefix="/api/v1")
+    app.include_router(ai_router, prefix="/api/v1")
+    app.include_router(learner_router, prefix="/api/v1")
 
     # Root endpoint
     @app.get("/", tags=["Root"])
@@ -142,6 +172,18 @@ def create_app() -> FastAPI:
             "docs": "/docs" if settings.enable_docs else "disabled",
             "health": "/api/v1/health",
         }
+
+    # Prometheus metrics endpoint (Task 024: observability)
+    @app.get("/metrics", tags=["Monitoring"])
+    async def prometheus_metrics():
+        """Prometheus-compatible metrics endpoint."""
+        from fastapi import Response
+        from app.infrastructure.observability import MetricsRegistry
+        content = MetricsRegistry.format_prometheus()
+        return Response(
+            content=content,
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     return app
 

@@ -15,6 +15,7 @@ interface AuthContextValue {
   login: (email: string, password: string, mfaCode?: string) => Promise<void>
   logout: (allDevices?: boolean) => Promise<void>
   refresh: () => void
+  setUser: (user: CurrentUser | null) => void
 }
 
 const AuthContext = React.createContext<AuthContextValue | null>(null)
@@ -55,14 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = React.useCallback(
     async (email: string, password: string, mfaCode?: string) => {
-      const response = await authApi.login({ email, password, mfaCode })
-      if (response.requiresMfa) {
+      const response = await authApi.login({ email, password, mfa_code: mfaCode })
+      if (response.requires_mfa) {
         // Return MFA challenge — caller handles
-        throw new MfaRequiredError(response.mfaSessionToken || '')
+        throw new MfaRequiredError(response.mfa_session_token || '')
       }
-      tokenStorage.setAccessToken(response.accessToken)
-      if (response.refreshToken) {
-        tokenStorage.setRefreshToken(response.refreshToken)
+      tokenStorage.setAccessToken(response.access_token)
+      if (response.refresh_token) {
+        tokenStorage.setRefreshToken(response.refresh_token)
       }
       setUser(response.user)
       setHasToken(true)
@@ -85,6 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Ignore errors on logout
       } finally {
         tokenStorage.clear()
+        // Also clear legacy keys
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('mastery-token')
+          // Clear auth cookies
+          document.cookie = 'mastery-authenticated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+          document.cookie = 'mastery-role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+        }
         setUser(null)
         setHasToken(false)
         queryClient.clear()
@@ -108,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     refresh,
+    setUser,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

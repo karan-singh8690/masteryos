@@ -18,6 +18,8 @@ import {
 import { AppLayout } from '@/components/layout/app-layout'
 import { ProtectedRoute } from '@/components/layout/route-protection'
 import { Sidebar } from '@/components/layout/sidebar'
+import { BetaBanner } from '@/components/beta/beta-banner'
+import { BetaFeedbackButton } from '@/components/beta/feedback-button'
 import { cn } from '@/lib/cn'
 import { ROUTES } from '@/lib/constants'
 
@@ -121,6 +123,7 @@ export default function LearnerLayout({
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Reuse the header from AppLayout but with our learner sidebar */}
           <LearnerHeader />
+          <BetaBanner />
           <main
             className="flex-1 overflow-y-auto bg-muted/30 p-4 md:p-6"
             id="main-content"
@@ -130,6 +133,7 @@ export default function LearnerLayout({
           </main>
         </div>
       </div>
+      <BetaFeedbackButton />
     </ProtectedRoute>
   )
 }

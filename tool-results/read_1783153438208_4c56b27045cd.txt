@@ -1,0 +1,1126 @@
+     1→"""Closed Beta Operations Platform API (Task 026).
+     2→
+     3→All endpoints are admin-only (require ROLE_ADMINISTRATOR or ROLE_SYSTEM_ADMIN).
+     4→All endpoints are read-only GETs except:
+     5→  - POST   /admin/beta-ops/feedback/{id}/vote         — vote on feedback
+     6→  - PATCH  /admin/beta-ops/feedback/{id}/meta         — set priority/roadmap
+     7→  - POST   /admin/beta-ops/feedback/{id}/mark-duplicate — mark as duplicate
+     8→  - POST   /admin/beta-ops/releases                   — create release note
+     9→  - PATCH  /admin/beta-ops/releases/{id}              — update release note
+    10→  - POST   /admin/beta-ops/releases/{id}/stage        — add a release stage
+    11→  - POST   /admin/beta-ops/experiments                — create experiment
+    12→  - PATCH  /admin/beta-ops/experiments/{id}           — update experiment
+    13→  - POST   /admin/beta-ops/experiments/{id}/assign    — assign a user to a variant
+    14→  - POST   /admin/beta-ops/experiments/{id}/results   — record a result snapshot
+    15→  - POST   /admin/beta-ops/reports/generate           — generate a report on demand
+    16→
+    17→These mutations are NOT business-logic changes — they manage operational
+    18→metadata (feedback triage, release tracking, experiment configuration)
+    19→that did not exist before Task 026.
+    20→"""
+    21→
+    22→from __future__ import annotations
+    23→
+    24→from datetime import datetime
+    25→from typing import Any
+    26→from uuid import UUID
+    27→
+    28→from fastapi import APIRouter, Depends, HTTPException, Query, status
+    29→from pydantic import BaseModel, Field
+    30→from sqlalchemy import select, update
+    31→from sqlalchemy.ext.asyncio import AsyncSession
+    32→
+    33→from app.application.beta_ops import (
+    34→    BetaOpsService,
+    35→    get_beta_ops_service,
+    36→)
+    37→from app.infrastructure.database.orm.beta_ops import (
+    38→    BetaFeedbackMetaModel,
+    39→    BetaFeedbackVoteModel,
+    40→    ExperimentAssignmentModel,
+    41→    ExperimentModel,
+    42→    ExperimentResultModel,
+    43→    ReleaseNoteModel,
+    44→    ReleaseStageModel,
+    45→)
+    46→from app.infrastructure.security.authorization import (
+    47→    ROLE_ADMINISTRATOR,
+    48→    ROLE_SYSTEM_ADMIN,
+    49→)
+    50→from app.presentation.dependencies import (
+    51→    get_current_user_id,
+    52→    get_uow,
+    53→    require_any_role,
+    54→)
+    55→from app.shared.logging import get_logger
+    56→
+    57→logger = get_logger(__name__)
+    58→
+    59→router = APIRouter(prefix="/admin/beta-ops", tags=["Admin — Beta Operations"])
+    60→
+    61→# All endpoints require admin role.
+    62→RequireAdmin = Depends(require_any_role(ROLE_ADMINISTRATOR, ROLE_SYSTEM_ADMIN))
+    63→
+    64→
+    65→# ============================================================
+    66→# Helper to extract raw session from UoW
+    67→# ============================================================
+    68→
+    69→
+    70→async def _session(uow) -> AsyncSession:
+    71→    async with uow as _uow:
+    72→        # The UoW's session is private; we read it for read-only aggregations.
+    73→        # This mirrors the pattern used in beta.py and admin.py.
+    74→        yield _uow._session  # type: ignore[union-attr]
+    75→
+    76→
+    77→# ============================================================
+    78→# Pydantic response models
+    79→# ============================================================
+    80→
+    81→
+    82→class DashboardResponse(BaseModel):
+    83→    total_invited: int
+    84→    active_beta_users: int
+    85→    daily_active_users: int
+    86→    weekly_active_users: int
+    87→    monthly_active_users: int
+    88→    invite_conversion_rate: float
+    89→    avg_session_duration_minutes: float
+    90→    study_sessions_completed: int
+    91→    feedback_received: int
+    92→    bugs_reported: int
+    93→    crash_reports: int
+    94→    nps_score: float
+    95→    user_satisfaction: float
+    96→    learning_progress_avg: float
+    97→    retention_day_1: float
+    98→    retention_day_7: float
+    99→    retention_day_30: float
+   100→    generated_at: str
+   101→
+   102→
+   103→class FunnelStepResponse(BaseModel):
+   104→    step: str
+   105→    count: int
+   106→    cumulative_pct: float
+   107→    step_pct: float
+   108→    median_time_from_previous_minutes: float | None
+   109→
+   110→
+   111→class FunnelResponse(BaseModel):
+   112→    steps: list[FunnelStepResponse]
+   113→    overall_conversion: float
+   114→    biggest_drop_step: str | None
+   115→    avg_time_to_first_question_minutes: float | None
+   116→
+   117→
+   118→class RetentionCohortResponse(BaseModel):
+   119→    cohort_week: str
+   120→    cohort_size: int
+   121→    week_0: int
+   122→    week_1: int
+   123→    week_2: int
+   124→    week_3: int
+   125→    week_4: int
+   126→
+   127→
+   128→class LearningEffectivenessResponse(BaseModel):
+   129→    mastery_growth_avg: float
+   130→    time_to_mastery_hours: float | None
+   131→    weak_concepts: list[dict[str, Any]]
+   132→    strong_concepts: list[dict[str, Any]]
+   133→    review_effectiveness: float
+   134→    question_accuracy: float
+   135→    average_confidence: float
+   136→    hint_usage_rate: float
+   137→    recommendation_acceptance: float
+   138→    adaptive_queue_quality: float
+   139→    interview_readiness_trend: list[dict[str, Any]]
+   140→
+   141→
+   142→class FeedbackItemResponse(BaseModel):
+   143→    id: str
+   144→    user_id: str
+   145→    rating: int
+   146→    category: str
+   147→    comment: str
+   148→    status: str
+   149→    priority: str
+   150→    roadmap_status: str
+   151→    vote_score: int
+   152→    vote_count: int
+   153→    duplicate_of: str | None
+   154→    tags: list[str]
+   155→    created_at: str
+   156→
+   157→
+   158→class FeedbackPlatformResponse(BaseModel):
+   159→    items: list[FeedbackItemResponse]
+   160→    total: int
+   161→    by_category: dict[str, int]
+   162→    by_priority: dict[str, int]
+   163→    by_status: dict[str, int]
+   164→    avg_vote_score: float
+   165→    top_voted: list[FeedbackItemResponse]
+   166→    potential_duplicates: list[dict[str, Any]]
+   167→
+   168→
+   169→class UserSuccessSignalResponse(BaseModel):
+   170→    user_id: str
+   171→    email: str
+   172→    signal_type: str
+   173→    severity: str
+   174→    description: str
+   175→    last_activity: str | None
+   176→    recommendation: str
+   177→
+   178→
+   179→class UserSuccessResponse(BaseModel):
+   180→    inactive_users: list[UserSuccessSignalResponse]
+   181→    at_risk_users: list[UserSuccessSignalResponse]
+   182→    incomplete_onboarding: list[UserSuccessSignalResponse]
+   183→    stuck_in_learning: list[UserSuccessSignalResponse]
+   184→    no_study_7_days: list[UserSuccessSignalResponse]
+   185→    failed_registration: list[UserSuccessSignalResponse]
+   186→    email_verification_pending: list[UserSuccessSignalResponse]
+   187→    recommendation_ignored: list[UserSuccessSignalResponse]
+   188→    summary: dict[str, int]
+   189→
+   190→
+   191→class InstructorAnalyticsResponse(BaseModel):
+   192→    content_quality: dict[str, Any]
+   193→    concept_coverage: dict[str, Any]
+   194→    question_quality: dict[str, Any]
+   195→    template_usage: list[dict[str, Any]]
+   196→    difficulty_balance: dict[str, Any]
+   197→    poor_performing_concepts: list[dict[str, Any]]
+   198→    frequently_missed_questions: list[dict[str, Any]]
+   199→    misconceptions: list[dict[str, Any]]
+   200→    explanation_usefulness: dict[str, Any]
+   201→
+   202→
+   203→class OperationalHealthResponse(BaseModel):
+   204→    platform_health: dict[str, Any]
+   205→    worker_health: dict[str, Any]
+   206→    background_jobs: dict[str, Any]
+   207→    queue_status: dict[str, Any]
+   208→    email_delivery: dict[str, Any]
+   209→    notification_delivery: dict[str, Any]
+   210→    database_health: dict[str, Any]
+   211→    redis_health: dict[str, Any]
+   212→    storage_usage: dict[str, Any]
+   213→    api_latency: dict[str, Any]
+   214→    ai_usage: dict[str, Any]
+   215→    cost_metrics: dict[str, Any]
+   216→
+   217→
+   218→class ReleaseNoteResponse(BaseModel):
+   219→    id: str
+   220→    version: str
+   221→    release_type: str
+   222→    title: str
+   223→    summary: str | None
+   224→    body: str
+   225→    features: list[dict[str, Any]]
+   226→    bug_fixes: list[dict[str, Any]]
+   227→    breaking_changes: list[dict[str, Any]]
+   228→    known_issues: list[dict[str, Any]]
+   229→    feature_freeze: bool
+   230→    published_at: str | None
+   231→    current_stage: str | None
+   232→    rollout_percentage: int
+   233→
+   234→
+   235→class ReleaseManagementResponse(BaseModel):
+   236→    releases: list[ReleaseNoteResponse]
+   237→    current_version: str | None
+   238→    feature_freeze_active: bool
+   239→    version_timeline: list[dict[str, Any]]
+   240→    rollback_history: list[dict[str, Any]]
+   241→
+   242→
+   243→class BetaReportResponse(BaseModel):
+   244→    period: str
+   245→    period_start: str
+   246→    period_end: str
+   247→    growth: dict[str, Any]
+   248→    retention: dict[str, Any]
+   249→    learning_outcomes: dict[str, Any]
+   250→    feedback_summary: dict[str, Any]
+   251→    top_bugs: list[dict[str, Any]]
+   252→    top_requests: list[dict[str, Any]]
+   253→    system_health: dict[str, Any]
+   254→    generated_at: str
+   255→
+   256→
+   257→class ExperimentResponse(BaseModel):
+   258→    id: str
+   259→    name: str
+   260→    description: str | None
+   261→    experiment_type: str
+   262→    variant_a: str
+   263→    variant_b: str
+   264→    rollout_percentage: int
+   265→    status: str
+   266→    target_metric: str | None
+   267→    min_sample_size: int
+   268→    started_at: str | None
+   269→    ended_at: str | None
+   270→    winner: str | None
+   271→    sample_size_a: int
+   272→    sample_size_b: int
+   273→    is_statistically_significant: bool
+   274→    metadata: dict[str, Any]
+   275→
+   276→
+   277→class ExperimentResultsResponse(BaseModel):
+   278→    experiment: ExperimentResponse
+   279→    variant_a_results: dict[str, Any]
+   280→    variant_b_results: dict[str, Any]
+   281→    statistical_significance: dict[str, Any]
+   282→    recommendation: str
+   283→
+   284→
+   285→class MessageResponse(BaseModel):
+   286→    message: str
+   287→    code: str = "OK"
+   288→
+   289→
+   290→# ============================================================
+   291→# Request models for mutations
+   292→# ============================================================
+   293→
+   294→
+   295→class VoteRequest(BaseModel):
+   296→    vote: int = Field(ge=-1, le=1, description="1 = upvote, -1 = downvote")
+   297→
+   298→
+   299→class UpdateFeedbackMetaRequest(BaseModel):
+   300→    priority: str | None = Field(None, description="low|normal|high|urgent|blocker")
+   301→    roadmap_status: str | None = Field(
+   302→        None, description="untriaged|planned|in_progress|shipped|wont_fix|duplicate"
+   303→    )
+   304→    roadmap_link: str | None = None
+   305→    tags: list[str] | None = None
+   306→    assigned_to: str | None = None
+   307→
+   308→
+   309→class MarkDuplicateRequest(BaseModel):
+   310→    duplicate_of: str = Field(description="UUID of the canonical feedback item")
+   311→
+   312→
+   313→class CreateReleaseNoteRequest(BaseModel):
+   314→    version: str
+   315→    release_type: str = "patch"
+   316→    title: str
+   317→    summary: str | None = None
+   318→    body: str
+   319→    features: list[dict[str, Any]] = Field(default_factory=list)
+   320→    bug_fixes: list[dict[str, Any]] = Field(default_factory=list)
+   321→    breaking_changes: list[dict[str, Any]] = Field(default_factory=list)
+   322→    known_issues: list[dict[str, Any]] = Field(default_factory=list)
+   323→    feature_freeze: bool = False
+   324→    published: bool = False
+   325→
+   326→
+   327→class UpdateReleaseNoteRequest(BaseModel):
+   328→    title: str | None = None
+   329→    summary: str | None = None
+   330→    body: str | None = None
+   331→    features: list[dict[str, Any]] | None = None
+   332→    bug_fixes: list[dict[str, Any]] | None = None
+   333→    breaking_changes: list[dict[str, Any]] | None = None
+   334→    known_issues: list[dict[str, Any]] | None = None
+   335→    feature_freeze: bool | None = None
+   336→    published: bool | None = None
+   337→
+   338→
+   339→class AddReleaseStageRequest(BaseModel):
+   340→    stage: str = Field(description="planned|building|canary|staged|live|rolled_back|abandoned")
+   341→    rollout_percentage: int = Field(0, ge=0, le=100)
+   342→    notes: str | None = None
+   343→
+   344→
+   345→class CreateExperimentRequest(BaseModel):
+   346→    id: str
+   347→    name: str
+   348→    description: str | None = None
+   349→    experiment_type: str = "ab"
+   350→    variant_a: str
+   351→    variant_b: str
+   352→    rollout_percentage: int = Field(50, ge=0, le=100)
+   353→    target_metric: str | None = None
+   354→    min_sample_size: int = 100
+   355→    metadata: dict[str, Any] = Field(default_factory=dict)
+   356→
+   357→
+   358→class UpdateExperimentRequest(BaseModel):
+   359→    name: str | None = None
+   360→    description: str | None = None
+   361→    rollout_percentage: int | None = Field(None, ge=0, le=100)
+   362→    status: str | None = None
+   363→    target_metric: str | None = None
+   364→    min_sample_size: int | None = None
+   365→    winner: str | None = None
+   366→    metadata: dict[str, Any] | None = None
+   367→
+   368→
+   369→class AssignVariantRequest(BaseModel):
+   370→    user_id: str
+   371→
+   372→
+   373→class RecordExperimentResultRequest(BaseModel):
+   374→    variant: str
+   375→    sample_size: int = Field(ge=0)
+   376→    metric_value: float | None = None
+   377→    metric_std_error: float | None = None
+   378→    conversion_count: int = Field(0, ge=0)
+   379→    metadata: dict[str, Any] = Field(default_factory=dict)
+   380→
+   381→
+   382→class GenerateReportRequest(BaseModel):
+   383→    period: str = Field("weekly", description="daily|weekly|monthly")
+   384→
+   385→
+   386→# ============================================================
+   387→# Helper: dataclass → dict
+   388→# ============================================================
+   389→
+   390→
+   391→def _dc_to_dict(dc: Any) -> dict[str, Any]:
+   392→    """Convert a frozen dataclass to a dict (recursively)."""
+   393→    import dataclasses
+   394→
+   395→    if dataclasses.is_dataclass(dc) and not isinstance(dc, type):
+   396→        return {f.name: _dc_to_dict(getattr(dc, f.name)) for f in dataclasses.fields(dc)}
+   397→    if isinstance(dc, list):
+   398→        return [_dc_to_dict(x) for x in dc]
+   399→    if isinstance(dc, dict):
+   400→        return {k: _dc_to_dict(v) for k, v in dc.items()}
+   401→    return dc
+   402→
+   403→
+   404→# ============================================================
+   405→# PART 1: Beta Operations Dashboard
+   406→# ============================================================
+   407→
+   408→
+   409→@router.get(
+   410→    "/dashboard",
+   411→    response_model=DashboardResponse,
+   412→    summary="Beta Operations Dashboard (admin)",
+   413→)
+   414→async def get_dashboard(
+   415→    user_id: UUID = Depends(get_current_user_id),
+   416→    _admin: Any = RequireAdmin,
+   417→    uow=Depends(get_uow),
+   418→    service: BetaOpsService = Depends(get_beta_ops_service),
+   419→) -> DashboardResponse:
+   420→    """High-level KPI snapshot for the beta operations dashboard."""
+   421→    async with uow as _uow:
+   422→        session = _uow._session  # type: ignore[union-attr]
+   423→        result = await service.get_dashboard(session)
+   424→    return DashboardResponse(**_dc_to_dict(result))
+   425→
+   426→
+   427→# ============================================================
+   428→# PART 2: Product Analytics — Funnel + Retention
+   429→# ============================================================
+   430→
+   431→
+   432→@router.get(
+   433→    "/analytics/funnel",
+   434→    response_model=FunnelResponse,
+   435→    summary="Registration funnel (admin)",
+   436→)
+   437→async def get_registration_funnel(
+   438→    days: int = Query(30, ge=1, le=365),
+   439→    user_id: UUID = Depends(get_current_user_id),
+   440→    _admin: Any = RequireAdmin,
+   441→    uow=Depends(get_uow),
+   442→    service: BetaOpsService = Depends(get_beta_ops_service),
+   443→) -> FunnelResponse:
+   444→    """Registration funnel for the last N days."""
+   445→    async with uow as _uow:
+   446→        session = _uow._session  # type: ignore[union-attr]
+   447→        result = await service.get_registration_funnel(session, days=days)
+   448→    return FunnelResponse(**_dc_to_dict(result))
+   449→
+   450→
+   451→@router.get(
+   452→    "/analytics/retention",
+   453→    response_model=list[RetentionCohortResponse],
+   454→    summary="Weekly retention cohorts (admin)",
+   455→)
+   456→async def get_retention_cohorts(
+   457→    weeks: int = Query(8, ge=1, le=52),
+   458→    user_id: UUID = Depends(get_current_user_id),
+   459→    _admin: Any = RequireAdmin,
+   460→    uow=Depends(get_uow),
+   461→    service: BetaOpsService = Depends(get_beta_ops_service),
+   462→) -> list[RetentionCohortResponse]:
+   463→    """Weekly retention cohorts for the last N weeks."""
+   464→    async with uow as _uow:
+   465→        session = _uow._session  # type: ignore[union-attr]
+   466→        result = await service.get_retention_cohorts(session, weeks=weeks)
+   467→    return [RetentionCohortResponse(**_dc_to_dict(c)) for c in result]
+   468→
+   469→
+   470→# ============================================================
+   471→# PART 3: Learning Effectiveness
+   472→# ============================================================
+   473→
+   474→
+   475→@router.get(
+   476→    "/learning",
+   477→    response_model=LearningEffectivenessResponse,
+   478→    summary="Learning effectiveness metrics (admin)",
+   479→)
+   480→async def get_learning_effectiveness(
+   481→    user_id: UUID = Depends(get_current_user_id),
+   482→    _admin: Any = RequireAdmin,
+   483→    uow=Depends(get_uow),
+   484→    service: BetaOpsService = Depends(get_beta_ops_service),
+   485→) -> LearningEffectivenessResponse:
+   486→    """Mastery growth, accuracy, hint usage, recommendation acceptance."""
+   487→    async with uow as _uow:
+   488→        session = _uow._session  # type: ignore[union-attr]
+   489→        result = await service.get_learning_effectiveness(session)
+   490→    return LearningEffectivenessResponse(**_dc_to_dict(result))
+   491→
+   492→
+   493→# ============================================================
+   494→# PART 4: User Feedback Platform
+   495→# ============================================================
+   496→
+   497→
+   498→@router.get(
+   499→    "/feedback",
+   500→    response_model=FeedbackPlatformResponse,
+   501→    summary="Feedback platform summary (admin)",
+   502→)
+   503→async def get_feedback_platform(
+   504→    limit: int = Query(100, ge=1, le=500),
+   505→    user_id: UUID = Depends(get_current_user_id),
+   506→    _admin: Any = RequireAdmin,
+   507→    uow=Depends(get_uow),
+   508→    service: BetaOpsService = Depends(get_beta_ops_service),
+   509→) -> FeedbackPlatformResponse:
+   510→    """Feedback items with votes, priority, roadmap, and duplicate detection."""
+   511→    async with uow as _uow:
+   512→        session = _uow._session  # type: ignore[union-attr]
+   513→        result = await service.get_feedback_platform(session, limit=limit)
+   514→    return FeedbackPlatformResponse(**_dc_to_dict(result))
+   515→
+   516→
+   517→@router.post(
+   518→    "/feedback/{feedback_id}/vote",
+   519→    response_model=MessageResponse,
+   520→    summary="Vote on a feedback item (authenticated)",
+   521→)
+   522→async def vote_on_feedback(
+   523→    feedback_id: UUID,
+   524→    request: VoteRequest,
+   525→    user_id: UUID = Depends(get_current_user_id),
+   526→    uow=Depends(get_uow),
+   527→) -> MessageResponse:
+   528→    """Cast or update a vote on a feedback item. Any authenticated user can vote."""
+   529→    async with uow as _uow:
+   530→        session = _uow._session  # type: ignore[union-attr]
+   531→        # Upsert the vote (unique on feedback_id + user_id)
+   532→        existing = (
+   533→            await session.execute(
+   534→                select(BetaFeedbackVoteModel).where(
+   535→                    BetaFeedbackVoteModel.feedback_id == feedback_id,
+   536→                    BetaFeedbackVoteModel.user_id == user_id,
+   537→                )
+   538→            )
+   539→        ).scalars().first()
+   540→        if existing:
+   541→            existing.vote = request.vote
+   542→        else:
+   543→            session.add(
+   544→                BetaFeedbackVoteModel(
+   545→                    feedback_id=feedback_id,
+   546→                    user_id=user_id,
+   547→                    vote=request.vote,
+   548→                )
+   549→            )
+   550→        await _uow.commit()
+   551→    return MessageResponse(message="Vote recorded")
+   552→
+   553→
+   554→@router.patch(
+   555→    "/feedback/{feedback_id}/meta",
+   556→    response_model=MessageResponse,
+   557→    summary="Update feedback priority / roadmap status (admin)",
+   558→)
+   559→async def update_feedback_meta(
+   560→    feedback_id: UUID,
+   561→    request: UpdateFeedbackMetaRequest,
+   562→    user_id: UUID = Depends(get_current_user_id),
+   563→    _admin: Any = RequireAdmin,
+   564→    uow=Depends(get_uow),
+   565→) -> MessageResponse:
+   566→    """Update the priority, roadmap status, tags, or assignee of a feedback item."""
+   567→    async with uow as _uow:
+   568→        session = _uow._session  # type: ignore[union-attr]
+   569→        existing = (
+   570→            await session.execute(
+   571→                select(BetaFeedbackMetaModel).where(
+   572→                    BetaFeedbackMetaModel.feedback_id == feedback_id
+   573→                )
+   574→            )
+   575→        ).scalars().first()
+   576→        if existing is None:
+   577→            existing = BetaFeedbackMetaModel(
+   578→                feedback_id=feedback_id,
+   579→                priority=request.priority or "normal",
+   580→                roadmap_status=request.roadmap_status or "untriaged",
+   581→                roadmap_link=request.roadmap_link,
+   582→                tags=request.tags or [],
+   583→                assigned_to=UUID(request.assigned_to) if request.assigned_to else None,
+   584→                updated_by=user_id,
+   585→            )
+   586→            session.add(existing)
+   587→        else:
+   588→            if request.priority is not None:
+   589→                existing.priority = request.priority
+   590→            if request.roadmap_status is not None:
+   591→                existing.roadmap_status = request.roadmap_status
+   592→            if request.roadmap_link is not None:
+   593→                existing.roadmap_link = request.roadmap_link
+   594→            if request.tags is not None:
+   595→                existing.tags = request.tags
+   596→            if request.assigned_to is not None:
+   597→                existing.assigned_to = (
+   598→                    UUID(request.assigned_to) if request.assigned_to else None
+   599→                )
+   600→            existing.updated_by = user_id
+   601→            existing.updated_at = datetime.utcnow()
+   602→        await _uow.commit()
+   603→    return MessageResponse(message="Feedback metadata updated")
+   604→
+   605→
+   606→@router.post(
+   607→    "/feedback/{feedback_id}/mark-duplicate",
+   608→    response_model=MessageResponse,
+   609→    summary="Mark a feedback item as duplicate of another (admin)",
+   610→)
+   611→async def mark_feedback_duplicate(
+   612→    feedback_id: UUID,
+   613→    request: MarkDuplicateRequest,
+   614→    user_id: UUID = Depends(get_current_user_id),
+   615→    _admin: Any = RequireAdmin,
+   616→    uow=Depends(get_uow),
+   617→) -> MessageResponse:
+   618→    """Mark feedback_id as a duplicate of the canonical item."""
+   619→    if str(feedback_id) == request.duplicate_of:
+   620→        raise HTTPException(
+   621→            status_code=400,
+   622→            detail="Cannot mark an item as a duplicate of itself",
+   623→        )
+   624→    async with uow as _uow:
+   625→        session = _uow._session  # type: ignore[union-attr]
+   626→        existing = (
+   627→            await session.execute(
+   628→                select(BetaFeedbackMetaModel).where(
+   629→                    BetaFeedbackMetaModel.feedback_id == feedback_id
+   630→                )
+   631→            )
+   632→        ).scalars().first()
+   633→        canonical_id = UUID(request.duplicate_of)
+   634→        if existing is None:
+   635→            existing = BetaFeedbackMetaModel(
+   636→                feedback_id=feedback_id,
+   637→                priority="normal",
+   638→                roadmap_status="duplicate",
+   639→                duplicate_of=canonical_id,
+   640→                tags=[],
+   641→                updated_by=user_id,
+   642→            )
+   643→            session.add(existing)
+   644→        else:
+   645→            existing.roadmap_status = "duplicate"
+   646→            existing.duplicate_of = canonical_id
+   647→            existing.updated_by = user_id
+   648→            existing.updated_at = datetime.utcnow()
+   649→        await _uow.commit()
+   650→    return MessageResponse(message="Marked as duplicate")
+   651→
+   652→
+   653→# ============================================================
+   654→# PART 5: User Success Center
+   655→# ============================================================
+   656→
+   657→
+   658→@router.get(
+   659→    "/success",
+   660→    response_model=UserSuccessResponse,
+   661→    summary="User success report (admin)",
+   662→)
+   663→async def get_user_success_report(
+   664→    user_id: UUID = Depends(get_current_user_id),
+   665→    _admin: Any = RequireAdmin,
+   666→    uow=Depends(get_uow),
+   667→    service: BetaOpsService = Depends(get_beta_ops_service),
+   668→) -> UserSuccessResponse:
+   669→    """At-risk users + actionable recommendations."""
+   670→    async with uow as _uow:
+   671→        session = _uow._session  # type: ignore[union-attr]
+   672→        result = await service.get_user_success_report(session)
+   673→    return UserSuccessResponse(**_dc_to_dict(result))
+   674→
+   675→
+   676→# ============================================================
+   677→# PART 6: Instructor Analytics
+   678→# ============================================================
+   679→
+   680→
+   681→@router.get(
+   682→    "/instructor",
+   683→    response_model=InstructorAnalyticsResponse,
+   684→    summary="Instructor analytics (admin)",
+   685→)
+   686→async def get_instructor_analytics(
+   687→    user_id: UUID = Depends(get_current_user_id),
+   688→    _admin: Any = RequireAdmin,
+   689→    uow=Depends(get_uow),
+   690→    service: BetaOpsService = Depends(get_beta_ops_service),
+   691→) -> InstructorAnalyticsResponse:
+   692→    """Content quality, concept coverage, misconceptions, frequently missed questions."""
+   693→    async with uow as _uow:
+   694→        session = _uow._session  # type: ignore[union-attr]
+   695→        result = await service.get_instructor_analytics(session)
+   696→    return InstructorAnalyticsResponse(**_dc_to_dict(result))
+   697→
+   698→
+   699→# ============================================================
+   700→# PART 7: Operational Monitoring
+   701→# ============================================================
+   702→
+   703→
+   704→@router.get(
+   705→    "/operations",
+   706→    response_model=OperationalHealthResponse,
+   707→    summary="Operational health snapshot (admin)",
+   708→)
+   709→async def get_operational_health(
+   710→    user_id: UUID = Depends(get_current_user_id),
+   711→    _admin: Any = RequireAdmin,
+   712→    uow=Depends(get_uow),
+   713→    service: BetaOpsService = Depends(get_beta_ops_service),
+   714→) -> OperationalHealthResponse:
+   715→    """Workers, outbox, email, DB, Redis, AI usage, cost metrics."""
+   716→    async with uow as _uow:
+   717→        session = _uow._session  # type: ignore[union-attr]
+   718→        result = await service.get_operational_health(session)
+   719→    return OperationalHealthResponse(**_dc_to_dict(result))
+   720→
+   721→
+   722→# ============================================================
+   723→# PART 8: Release Management
+   724→# ============================================================
+   725→
+   726→
+   727→@router.get(
+   728→    "/releases",
+   729→    response_model=ReleaseManagementResponse,
+   730→    summary="Release management (admin)",
+   731→)
+   732→async def get_releases(
+   733→    user_id: UUID = Depends(get_current_user_id),
+   734→    _admin: Any = RequireAdmin,
+   735→    uow=Depends(get_uow),
+   736→    service: BetaOpsService = Depends(get_beta_ops_service),
+   737→) -> ReleaseManagementResponse:
+   738→    """List release notes + version timeline + rollback history."""
+   739→    async with uow as _uow:
+   740→        session = _uow._session  # type: ignore[union-attr]
+   741→        result = await service.get_release_management(session)
+   742→    return ReleaseManagementResponse(**_dc_to_dict(result))
+   743→
+   744→
+   745→@router.post(
+   746→    "/releases",
+   747→    response_model=ReleaseNoteResponse,
+   748→    status_code=status.HTTP_201_CREATED,
+   749→    summary="Create a release note (admin)",
+   750→)
+   751→async def create_release(
+   752→    request: CreateReleaseNoteRequest,
+   753→    user_id: UUID = Depends(get_current_user_id),
+   754→    _admin: Any = RequireAdmin,
+   755→    uow=Depends(get_uow),
+   756→) -> ReleaseNoteResponse:
+   757→    """Create a new release note."""
+   758→    async with uow as _uow:
+   759→        session = _uow._session  # type: ignore[union-attr]
+   760→        note = ReleaseNoteModel(
+   761→            version=request.version,
+   762→            release_type=request.release_type,
+   763→            title=request.title,
+   764→            summary=request.summary,
+   765→            body=request.body,
+   766→            features=request.features,
+   767→            bug_fixes=request.bug_fixes,
+   768→            breaking_changes=request.breaking_changes,
+   769→            known_issues=request.known_issues,
+   770→            feature_freeze=request.feature_freeze,
+   771→            published_at=datetime.utcnow() if request.published else None,
+   772→            created_by=user_id,
+   773→        )
+   774→        session.add(note)
+   775→        await _uow.commit()
+   776→        await session.refresh(note)
+   777→    return ReleaseNoteResponse(
+   778→        id=str(note.id),
+   779→        version=note.version,
+   780→        release_type=note.release_type,
+   781→        title=note.title,
+   782→        summary=note.summary,
+   783→        body=note.body,
+   784→        features=list(note.features or []),
+   785→        bug_fixes=list(note.bug_fixes or []),
+   786→        breaking_changes=list(note.breaking_changes or []),
+   787→        known_issues=list(note.known_issues or []),
+   788→        feature_freeze=note.feature_freeze,
+   789→        published_at=note.published_at.isoformat() if note.published_at else None,
+   790→        current_stage=None,
+   791→        rollout_percentage=0,
+   792→    )
+   793→
+   794→
+   795→@router.patch(
+   796→    "/releases/{release_id}",
+   797→    response_model=MessageResponse,
+   798→    summary="Update a release note (admin)",
+   799→)
+   800→async def update_release(
+   801→    release_id: UUID,
+   802→    request: UpdateReleaseNoteRequest,
+   803→    user_id: UUID = Depends(get_current_user_id),
+   804→    _admin: Any = RequireAdmin,
+   805→    uow=Depends(get_uow),
+   806→) -> MessageResponse:
+   807→    """Update a release note."""
+   808→    async with uow as _uow:
+   809→        session = _uow._session  # type: ignore[union-attr]
+   810→        note = await session.get(ReleaseNoteModel, release_id)
+   811→        if note is None:
+   812→            raise HTTPException(status_code=404, detail="Release note not found")
+   813→        if request.title is not None:
+   814→            note.title = request.title
+   815→        if request.summary is not None:
+   816→            note.summary = request.summary
+   817→        if request.body is not None:
+   818→            note.body = request.body
+   819→        if request.features is not None:
+   820→            note.features = request.features
+   821→        if request.bug_fixes is not None:
+   822→            note.bug_fixes = request.bug_fixes
+   823→        if request.breaking_changes is not None:
+   824→            note.breaking_changes = request.breaking_changes
+   825→        if request.known_issues is not None:
+   826→            note.known_issues = request.known_issues
+   827→        if request.feature_freeze is not None:
+   828→            note.feature_freeze = request.feature_freeze
+   829→        if request.published is not None and request.published and note.published_at is None:
+   830→            note.published_at = datetime.utcnow()
+   831→        await _uow.commit()
+   832→    return MessageResponse(message="Release note updated")
+   833→
+   834→
+   835→@router.post(
+   836→    "/releases/{release_id}/stage",
+   837→    response_model=MessageResponse,
+   838→    summary="Add a release stage (canary/staged/live/rolled_back) (admin)",
+   839→)
+   840→async def add_release_stage(
+   841→    release_id: UUID,
+   842→    request: AddReleaseStageRequest,
+   843→    user_id: UUID = Depends(get_current_user_id),
+   844→    _admin: Any = RequireAdmin,
+   845→    uow=Depends(get_uow),
+   846→) -> MessageResponse:
+   847→    """Add a stage to a release's rollout timeline."""
+   848→    async with uow as _uow:
+   849→        session = _uow._session  # type: ignore[union-attr]
+   850→        note = await session.get(ReleaseNoteModel, release_id)
+   851→        if note is None:
+   852→            raise HTTPException(status_code=404, detail="Release note not found")
+   853→        stage = ReleaseStageModel(
+   854→            release_note_id=release_id,
+   855→            stage=request.stage,
+   856→            rollout_percentage=request.rollout_percentage,
+   857→            notes=request.notes,
+   858→            triggered_by=user_id,
+   859→        )
+   860→        session.add(stage)
+   861→        await _uow.commit()
+   862→    return MessageResponse(message=f"Stage '{request.stage}' added")
+   863→
+   864→
+   865→# ============================================================
+   866→# PART 9: Beta Reports
+   867→# ============================================================
+   868→
+   869→
+   870→@router.get(
+   871→    "/reports/{period}",
+   872→    response_model=BetaReportResponse,
+   873→    summary="Get an auto-generated beta report (admin)",
+   874→)
+   875→async def get_report(
+   876→    period: str,
+   877→    user_id: UUID = Depends(get_current_user_id),
+   878→    _admin: Any = RequireAdmin,
+   879→    uow=Depends(get_uow),
+   880→    service: BetaOpsService = Depends(get_beta_ops_service),
+   881→) -> BetaReportResponse:
+   882→    """Generate a daily/weekly/monthly beta report on demand."""
+   883→    if period not in ("daily", "weekly", "monthly"):
+   884→        raise HTTPException(
+   885→            status_code=400,
+   886→            detail="period must be one of: daily, weekly, monthly",
+   887→        )
+   888→    async with uow as _uow:
+   889→        session = _uow._session  # type: ignore[union-attr]
+   890→        result = await service.generate_report(session, period=period)
+   891→    return BetaReportResponse(**_dc_to_dict(result))
+   892→
+   893→
+   894→@router.post(
+   895→    "/reports/generate",
+   896→    response_model=BetaReportResponse,
+   897→    summary="Generate a beta report on demand (admin)",
+   898→)
+   899→async def generate_report(
+   900→    request: GenerateReportRequest,
+   901→    user_id: UUID = Depends(get_current_user_id),
+   902→    _admin: Any = RequireAdmin,
+   903→    uow=Depends(get_uow),
+   904→    service: BetaOpsService = Depends(get_beta_ops_service),
+   905→) -> BetaReportResponse:
+   906→    """Generate a beta report on demand."""
+   907→    if request.period not in ("daily", "weekly", "monthly"):
+   908→        raise HTTPException(
+   909→            status_code=400,
+   910→            detail="period must be one of: daily, weekly, monthly",
+   911→        )
+   912→    async with uow as _uow:
+   913→        session = _uow._session  # type: ignore[union-attr]
+   914→        result = await service.generate_report(session, period=request.period)
+   915→    return BetaReportResponse(**_dc_to_dict(result))
+   916→
+   917→
+   918→# ============================================================
+   919→# PART 10: Experiment Platform
+   920→# ============================================================
+   921→
+   922→
+   923→@router.get(
+   924→    "/experiments",
+   925→    response_model=list[ExperimentResponse],
+   926→    summary="List experiments (admin)",
+   927→)
+   928→async def list_experiments(
+   929→    user_id: UUID = Depends(get_current_user_id),
+   930→    _admin: Any = RequireAdmin,
+   931→    uow=Depends(get_uow),
+   932→    service: BetaOpsService = Depends(get_beta_ops_service),
+   933→) -> list[ExperimentResponse]:
+   934→    """List all experiments with assignment counts + significance."""
+   935→    async with uow as _uow:
+   936→        session = _uow._session  # type: ignore[union-attr]
+   937→        result = await service.list_experiments(session)
+   938→    return [ExperimentResponse(**_dc_to_dict(e)) for e in result]
+   939→
+   940→
+   941→@router.get(
+   942→    "/experiments/{experiment_id}",
+   943→    response_model=ExperimentResultsResponse,
+   944→    summary="Get experiment results + statistical significance (admin)",
+   945→)
+   946→async def get_experiment(
+   947→    experiment_id: str,
+   948→    user_id: UUID = Depends(get_current_user_id),
+   949→    _admin: Any = RequireAdmin,
+   950→    uow=Depends(get_uow),
+   951→    service: BetaOpsService = Depends(get_beta_ops_service),
+   952→) -> ExperimentResultsResponse:
+   953→    """Get detailed results for one experiment."""
+   954→    async with uow as _uow:
+   955→        session = _uow._session  # type: ignore[union-attr]
+   956→        result = await service.get_experiment_results(session, experiment_id)
+   957→    if result is None:
+   958→        raise HTTPException(status_code=404, detail="Experiment not found")
+   959→    return ExperimentResultsResponse(**_dc_to_dict(result))
+   960→
+   961→
+   962→@router.post(
+   963→    "/experiments",
+   964→    response_model=ExperimentResponse,
+   965→    status_code=status.HTTP_201_CREATED,
+   966→    summary="Create an experiment (admin)",
+   967→)
+   968→async def create_experiment(
+   969→    request: CreateExperimentRequest,
+   970→    user_id: UUID = Depends(get_current_user_id),
+   971→    _admin: Any = RequireAdmin,
+   972→    uow=Depends(get_uow),
+   973→) -> ExperimentResponse:
+   974→    """Create a new A/B experiment."""
+   975→    async with uow as _uow:
+   976→        session = _uow._session  # type: ignore[union-attr]
+   977→        existing = await session.get(ExperimentModel, request.id)
+   978→        if existing is not None:
+   979→            raise HTTPException(
+   980→                status_code=409,
+   981→                detail=f"Experiment '{request.id}' already exists",
+   982→            )
+   983→        exp = ExperimentModel(
+   984→            id=request.id,
+   985→            name=request.name,
+   986→            description=request.description,
+   987→            experiment_type=request.experiment_type,
+   988→            variant_a=request.variant_a,
+   989→            variant_b=request.variant_b,
+   990→            rollout_percentage=request.rollout_percentage,
+   991→            status="draft",
+   992→            target_metric=request.target_metric,
+   993→            min_sample_size=request.min_sample_size,
+   994→            metadata_=request.metadata,
+   995→        )
+   996→        session.add(exp)
+   997→        await _uow.commit()
+   998→    return ExperimentResponse(
+   999→        id=exp.id,
+  1000→        name=exp.name,
+  1001→        description=exp.description,
+  1002→        experiment_type=exp.experiment_type,
+  1003→        variant_a=exp.variant_a,
+  1004→        variant_b=exp.variant_b,
+  1005→        rollout_percentage=exp.rollout_percentage,
+  1006→        status=exp.status,
+  1007→        target_metric=exp.target_metric,
+  1008→        min_sample_size=exp.min_sample_size,
+  1009→        started_at=None,
+  1010→        ended_at=None,
+  1011→        winner=None,
+  1012→        sample_size_a=0,
+  1013→        sample_size_b=0,
+  1014→        is_statistically_significant=False,
+  1015→        metadata=dict(exp.metadata_ or {}),
+  1016→    )
+  1017→
+  1018→
+  1019→@router.patch(
+  1020→    "/experiments/{experiment_id}",
+  1021→    response_model=MessageResponse,
+  1022→    summary="Update an experiment (admin)",
+  1023→)
+  1024→async def update_experiment(
+  1025→    experiment_id: str,
+  1026→    request: UpdateExperimentRequest,
+  1027→    user_id: UUID = Depends(get_current_user_id),
+  1028→    _admin: Any = RequireAdmin,
+  1029→    uow=Depends(get_uow),
+  1030→) -> MessageResponse:
+  1031→    """Update experiment status, rollout %, winner, etc."""
+  1032→    async with uow as _uow:
+  1033→        session = _uow._session  # type: ignore[union-attr]
+  1034→        exp = await session.get(ExperimentModel, experiment_id)
+  1035→        if exp is None:
+  1036→            raise HTTPException(status_code=404, detail="Experiment not found")
+  1037→        if request.name is not None:
+  1038→            exp.name = request.name
+  1039→        if request.description is not None:
+  1040→            exp.description = request.description
+  1041→        if request.rollout_percentage is not None:
+  1042→            exp.rollout_percentage = request.rollout_percentage
+  1043→        if request.status is not None:
+  1044→            exp.status = request.status
+  1045→            if request.status == "running" and exp.started_at is None:
+  1046→                exp.started_at = datetime.utcnow()
+  1047→            if request.status in ("completed", "stopped") and exp.ended_at is None:
+  1048→                exp.ended_at = datetime.utcnow()
+  1049→        if request.target_metric is not None:
+  1050→            exp.target_metric = request.target_metric
+  1051→        if request.min_sample_size is not None:
+  1052→            exp.min_sample_size = request.min_sample_size
+  1053→        if request.winner is not None:
+  1054→            exp.winner = request.winner
+  1055→        if request.metadata is not None:
+  1056→            exp.metadata_ = request.metadata
+  1057→        await _uow.commit()
+  1058→    return MessageResponse(message="Experiment updated")
+  1059→
+  1060→
+  1061→@router.post(
+  1062→    "/experiments/{experiment_id}/assign",
+  1063→    response_model=MessageResponse,
+  1064→    summary="Assign a user to an experiment variant (admin)",
+  1065→)
+  1066→async def assign_variant(
+  1067→    experiment_id: str,
+  1068→    request: AssignVariantRequest,
+  1069→    user_id: UUID = Depends(get_current_user_id),
+  1070→    _admin: Any = RequireAdmin,
+  1071→    uow=Depends(get_uow),
+  1072→    service: BetaOpsService = Depends(get_beta_ops_service),
+  1073→) -> MessageResponse:
+  1074→    """Sticky-bucket a user to a variant for an experiment."""
+  1075→    async with uow as _uow:
+  1076→        session = _uow._session  # type: ignore[union-attr]
+  1077→        target_user_id = UUID(request.user_id)
+  1078→        variant = await service.assign_variant(session, experiment_id, target_user_id)
+  1079→        if variant is None:
+  1080→            raise HTTPException(
+  1081→                status_code=400,
+  1082→                detail="Experiment not found or not running",
+  1083→            )
+  1084→        await _uow.commit()
+  1085→    return MessageResponse(message=f"Assigned to variant: {variant}", code=variant)
+  1086→
+  1087→
+  1088→@router.post(
+  1089→    "/experiments/{experiment_id}/results",
+  1090→    response_model=MessageResponse,
+  1091→    summary="Record an experiment result snapshot (admin)",
+  1092→)
+  1093→async def record_experiment_result(
+  1094→    experiment_id: str,
+  1095→    request: RecordExperimentResultRequest,
+  1096→    user_id: UUID = Depends(get_current_user_id),
+  1097→    _admin: Any = RequireAdmin,
+  1098→    uow=Depends(get_uow),
+  1099→) -> MessageResponse:
+  1100→    """Record a result snapshot for a variant of an experiment."""
+  1101→    async with uow as _uow:
+  1102→        session = _uow._session  # type: ignore[union-attr]
+  1103→        exp = await session.get(ExperimentModel, experiment_id)
+  1104→        if exp is None:
+  1105→            raise HTTPException(status_code=404, detail="Experiment not found")
+  1106→        if request.variant not in (exp.variant_a, exp.variant_b):
+  1107→            raise HTTPException(
+  1108→                status_code=400,
+  1109→                detail=f"Variant must be '{exp.variant_a}' or '{exp.variant_b}'",
+  1110→            )
+  1111→        result = ExperimentResultModel(
+  1112→            experiment_id=experiment_id,
+  1113→            variant=request.variant,
+  1114→            sample_size=request.sample_size,
+  1115→            metric_value=request.metric_value,
+  1116→            metric_std_error=request.metric_std_error,
+  1117→            conversion_count=request.conversion_count,
+  1118→            metadata_=request.metadata,
+  1119→        )
+  1120→        session.add(result)
+  1121→        await _uow.commit()
+  1122→    return MessageResponse(message="Result recorded")
+  1123→
+  1124→
+  1125→__all__ = ["router"]
+  1126→
