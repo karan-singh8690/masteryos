@@ -8,6 +8,7 @@ import {
   Mail, Clock, FileText, AlertTriangle, BarChart3, CreditCard,
   Settings, Search, type LucideIcon,
   Activity, HeartHandshake, GraduationCap, Wrench, Rocket,
+  UserPlus,
   FlaskConical, ClipboardList, LineChart, type LucideIcon as LucideIcon2,
 } from 'lucide-react'
 
@@ -43,6 +44,7 @@ const ADMIN_NAV: NavItem[] = [
 // Task 026: Closed Beta Operations Platform nav section.
 const BETA_OPS_NAV: NavItem[] = [
   { label: 'Beta Dashboard', href: '/admin/beta-ops', icon: Activity },
+  { label: 'Beta Invites', href: '/admin/invites', icon: UserPlus },
   { label: 'Funnel & Retention', href: '/admin/beta-ops/funnel', icon: LineChart },
   { label: 'Learning Insights', href: '/admin/beta-ops/learning', icon: GraduationCap },
   { label: 'Feedback Review', href: '/admin/beta-ops/feedback', icon: ClipboardList },
