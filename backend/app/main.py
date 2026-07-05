@@ -119,11 +119,12 @@ def create_app() -> FastAPI:
     app.add_middleware(ETagMiddleware)
     app.add_middleware(CompressionMiddleware)
     # Redis cache middleware (Phase 5: performance)
+    # Note: Can't use await in create_app() — it's a regular function.
+    # The CacheMiddleware will connect to Redis lazily on first request.
     try:
         import redis.asyncio as aioredis
         from app.infrastructure.cache.middleware import CacheMiddleware
         cache_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-        await cache_redis.ping()
         app.add_middleware(CacheMiddleware, redis_client=cache_redis)
         logger.info("cache_middleware_registered")
     except Exception as exc:
