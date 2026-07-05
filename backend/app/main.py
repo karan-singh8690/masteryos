@@ -200,12 +200,20 @@ def create_app() -> FastAPI:
     async def prometheus_metrics():
         """Prometheus-compatible metrics endpoint."""
         from fastapi import Response
-        from app.infrastructure.observability import MetricsRegistry
-        content = MetricsRegistry.format_prometheus()
-        return Response(
-            content=content,
-            media_type="text/plain; version=0.0.4; charset=utf-8",
-        )
+        from app.infrastructure.observability import get_metrics_registry
+        try:
+            registry = get_metrics_registry()
+            content = registry.format_prometheus()
+            return Response(
+                content=content,
+                media_type="text/plain; version=0.0.4; charset=utf-8",
+            )
+        except Exception as exc:
+            return Response(
+                content=f"# Error generating metrics: {exc}\n",
+                media_type="text/plain",
+                status_code=200,
+            )
 
     return app
 
