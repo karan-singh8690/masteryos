@@ -1,43 +1,85 @@
 'use client'
 
-import { Building2, Archive, Ban } from 'lucide-react'
-import { toast } from 'sonner'
-
-import { useOrganizations, useSuspendOrganization, useArchiveOrganization } from '@/hooks/use-admin'
+import * as React from 'react'
+import { Building2, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/components/ui/empty-state'
+import { tokenStorage } from '@/lib/api-client'
 
-export default function AdminOrganizationsPage() {
-  const { data: orgs, isLoading } = useOrganizations()
-  const suspendMutation = useSuspendOrganization()
-  const archiveMutation = useArchiveOrganization()
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-  if (isLoading) return <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+interface Org {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  seats: number
+  status: string
+  created_at: string | null
+}
+
+export default function OrganizationsPage() {
+  const [orgs, setOrgs] = React.useState<Org[]>([])
+  const [loading, setLoading] = React.useState(true)
+
+  React.useEffect(() => { fetchOrgs() }, [])
+
+  async function fetchOrgs() {
+    try {
+      const token = tokenStorage.getAccessToken()
+      const res = await fetch(`${API_URL}/api/v1/admin/organizations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setOrgs(data.items || data || [])
+      }
+    } catch { /* empty */ }
+    finally { setLoading(false) }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+      </div>
+    )
+  }
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div><h1 className="text-2xl font-bold tracking-tight">Organizations</h1><p className="text-sm text-muted-foreground">Manage organizations</p></div>
-      {!orgs || orgs.length === 0 ? (
-        <EmptyState icon={Building2} title="No organizations" description="No organizations have been created yet." />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>
+        <p className="text-sm text-muted-foreground">Manage customer organizations ({orgs.length} total)</p>
+      </div>
+
+      {orgs.length === 0 ? (
+        <Card className="rounded-2xl">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Building2 className="h-10 w-10 text-muted-foreground" />
+            <p className="mt-4 text-sm text-muted-foreground">No organizations yet</p>
+            <p className="text-xs text-muted-foreground">Organizations are created when users subscribe to Team plan</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-4">
           {orgs.map((org) => (
-            <Card key={org.id} hover>
+            <Card key={org.id} className="rounded-2xl">
               <CardContent className="flex items-center justify-between p-4">
-                <div><p className="text-sm font-medium">{org.name}</p><p className="text-xs text-muted-foreground">{org.slug} • {org.member_count} members • {org.subject_count} subjects</p></div>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-emerald-500/10 p-2.5">
+                    <Building2 className="h-5 w-5 text-emerald-500" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{org.name}</p>
+                    <p className="text-xs text-muted-foreground">{org.slug} · {org.seats} seats</p>
+                  </div>
+                </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={org.status === 'active' ? 'success' : org.status === 'suspended' ? 'destructive' : 'secondary'} className="capitalize">{org.status}</Badge>
-                  {org.status === 'active' && (
-                    <Button size="sm" variant="ghost" onClick={() => suspendMutation.mutateAsync(org.id).then(() => toast.success('Suspended')).catch(() => toast.error('Failed'))} loading={suspendMutation.isPending}>
-                      <Ban className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                  <Button size="sm" variant="ghost" onClick={() => archiveMutation.mutateAsync(org.id).then(() => toast.success('Archived')).catch(() => toast.error('Failed'))} loading={archiveMutation.isPending}>
-                    <Archive className="h-4 w-4" />
-                  </Button>
+                  <Badge variant="secondary" className="capitalize">{org.plan}</Badge>
+                  <Badge variant={org.status === 'active' ? 'success' : 'destructive'} className="text-xs capitalize">{org.status}</Badge>
                 </div>
               </CardContent>
             </Card>
