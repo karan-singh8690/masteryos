@@ -50,6 +50,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_database()
     logger.info("database_initialized")
 
+    # Auto-seed Python interview content on startup (idempotent — skips if already seeded).
+    # This ensures learner portal always has at least one subject to enroll in.
+    try:
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from scripts.seed_content import seed_content as _seed_content
+        await _seed_content()
+        logger.info("content_seed_completed")
+    except Exception as exc:
+        logger.warning("content_seed_failed", error=str(exc))
+
     # Initialize Redis cache (Task 024: platform hardening)
     try:
         import redis.asyncio as aioredis
