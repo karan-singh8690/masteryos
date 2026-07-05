@@ -23,6 +23,7 @@ from app.infrastructure.database.orm.core import (
     MasteryScoreModel,
     ReviewModel,
 )
+from app.infrastructure.database.orm.content import SubjectModel, ConceptModel
 from app.presentation.dependencies import get_current_user_id, get_uow
 
 router = APIRouter(tags=["Learner"])
@@ -523,3 +524,83 @@ async def get_unread_notification_count(
             return UnreadCountResponse(unread_count=count)
     except Exception:
         return UnreadCountResponse(unread_count=0)
+
+
+# ============================================================
+# Subjects (public — for learner portal, no admin RBAC needed)
+# ============================================================
+
+
+class SubjectSummary(BaseModel):
+    id: UUID
+    code: str
+    name: str
+    slug: str
+    description: str | None
+    status: str
+
+
+@router.get("/subjects", response_model=list[SubjectSummary])
+async def list_subjects_for_learners(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[SubjectSummary]:
+    """List published subjects for the learner portal."""
+    try:
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+            result = await session.execute(
+                select(SubjectModel)
+                .where(SubjectModel.status == "published")
+                .order_by(SubjectModel.name)
+            )
+            subjects = result.scalars().all()
+            return [
+                SubjectSummary(
+                    id=s.id,
+                    code=s.code,
+                    name=s.name,
+                    slug=s.slug,
+                    description=s.description,
+                    status=s.status,
+                )
+                for s in subjects
+            ]
+    except Exception:
+        return []
+
+
+@router.get("/subjects/{subject_id}/concepts")
+async def list_concepts_for_learners(
+    subject_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """List concepts for a subject (learner view)."""
+    try:
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+            result = await session.execute(
+                select(ConceptModel)
+                .where(
+                    and_(
+                        ConceptModel.subject_id == subject_id,
+                        ConceptModel.status == "published",
+                    )
+                )
+                .order_by(ConceptModel.name)
+            )
+            concepts = result.scalars().all()
+            return [
+                {
+                    "id": str(c.id),
+                    "slug": c.slug,
+                    "name": c.name,
+                    "description": c.description,
+                    "difficulty": c.difficulty,
+                    "importance": c.importance,
+                }
+                for c in concepts
+            ]
+    except Exception:
+        return []

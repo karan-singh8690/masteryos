@@ -31,7 +31,7 @@ export default function SubjectsPage() {
   async function fetchSubjects() {
     try {
       const token = tokenStorage.getAccessToken()
-      const res = await fetch(`${API_URL}/api/v1/admin/subjects`, {
+      const res = await fetch(`${API_URL}/api/v1/subjects`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
       if (res.ok) {

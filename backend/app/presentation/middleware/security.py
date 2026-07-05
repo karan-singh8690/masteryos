@@ -238,7 +238,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     This middleware primarily protects cookie-based auth (refresh tokens).
     """
 
-    EXEMPT_PATHS = {"/api/v1/health", "/api/v1/health/ready", "/api/v1/health/live"}
+    EXEMPT_PATHS = {"/api/v1/health", "/api/v1/health/ready", "/api/v1/health/live", "/api/v1/ws", "/ws", "/metrics"}
     SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
     async def dispatch(
