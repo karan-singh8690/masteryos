@@ -73,23 +73,92 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const subscribersRef = React.useRef<Map<WSMessageType, Set<(msg: WSMessage) => void>>>(new Map())
   const reconnectTimerRef = React.useRef<NodeJS.Timeout | null>(null)
 
-  // WebSocket is disabled — backend doesn't have a /ws endpoint yet.
-  // Provider still renders so components don't crash, but no connection is attempted.
   const connect = React.useCallback(() => {
-    // No-op: WebSocket not implemented on backend
-    setStatus('disconnected')
+    if (typeof window === 'undefined') return
+    if (wsRef.current?.readyState === WebSocket.OPEN) return
+
+    // Get token from localStorage
+    const token = localStorage.getItem('mastery.access_token')
+    if (!token) {
+      setStatus('disconnected')
+      return
+    }
+
+    try {
+      setStatus(reconnectAttemptRef.current > 0 ? 'reconnecting' : 'connecting')
+      const wsUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        setStatus('connected')
+        reconnectAttemptRef.current = 0
+        startHeartbeat()
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data)
+          // Skip ping/pong
+          if (msg.type === 'ping') {
+            ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }))
+            return
+          }
+          setLastMessage(msg)
+          setMessages((prev) => [...prev.slice(-MAX_MESSAGES_BUFFER + 1), msg])
+
+          // Notify subscribers
+          const subs = subscribersRef.current.get(msg.type)
+          subs?.forEach((handler) => handler(msg))
+          const allSubs = subscribersRef.current.get('*' as WSMessageType)
+          allSubs?.forEach((handler) => handler(msg))
+        } catch {
+          // Ignore non-JSON
+        }
+      }
+
+      ws.onerror = () => {
+        setStatus('error')
+      }
+
+      ws.onclose = () => {
+        setStatus('disconnected')
+        stopHeartbeat()
+        // Only reconnect if we haven't exceeded max attempts
+        if (reconnectAttemptRef.current < RECONNECT_DELAYS.length) {
+          scheduleReconnect()
+        }
+      }
+    } catch {
+      setStatus('error')
+      scheduleReconnect()
+    }
   }, [])
 
   const scheduleReconnect = React.useCallback(() => {
-    // No-op: WebSocket not implemented on backend
-  }, [])
+    if (reconnectTimerRef.current) return
+    const delay = RECONNECT_DELAYS[Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)]
+    reconnectAttemptRef.current++
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null
+      connect()
+    }, delay)
+  }, [connect])
 
   const startHeartbeat = () => {
-    // No-op: WebSocket not implemented on backend
+    stopHeartbeat()
+    heartbeatRef.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() }))
+      }
+    }, HEARTBEAT_INTERVAL)
   }
 
   const stopHeartbeat = () => {
-    // No-op: WebSocket not implemented on backend
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = null
+    }
   }
 
   const send = React.useCallback((message: WSMessage) => {
@@ -120,9 +189,12 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, [connect])
 
   React.useEffect(() => {
-    // WebSocket is disabled — backend doesn't have a /ws endpoint yet.
-    // No connection attempt on mount.
-    return () => {}
+    connect()
+    return () => {
+      stopHeartbeat()
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      wsRef.current?.close()
+    }
   }, [connect])
 
   const value: WebSocketContextValue = {
