@@ -203,12 +203,11 @@ function LearnerSidebar({ className, onNavigate }: LearnerSidebarProps) {
           <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
             Unlock unlimited study sessions & AI explanations.
           </p>
-          <button
-            type="button"
-            className="mt-3 w-full rounded-md bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:from-emerald-600 hover:to-teal-600"
-          >
-            Upgrade
-          </button>
+          <a href="/portal/billing" className="mt-3 block">
+            <span className="block w-full rounded-md bg-gradient-to-r from-emerald-500 to-teal-500 px-3 py-1.5 text-center text-xs font-semibold text-white shadow-sm transition-all hover:from-emerald-600 hover:to-teal-600">
+              Upgrade
+            </span>
+          </a>
         </div>
       </div>
     </aside>
