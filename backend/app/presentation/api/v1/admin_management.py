@@ -41,9 +41,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update, func, and_, or_, text
 
 from app.application.shared import UnitOfWork
-from app.infrastructure.database.orm.identity import UserModel, UserProfileModel
-from app.infrastructure.database.orm.auth import AuthAuditLogModel, SessionModel, EmailDeliveryLogModel
-from app.infrastructure.database.orm.background import NotificationModel, ScheduledJobModel, WorkerHeartbeatModel
+from app.infrastructure.database.orm.identity import UserModel, UserProfileModel, SessionModel
+from app.infrastructure.database.orm.auth import AuthAuditLogModel
+from app.infrastructure.database.orm.background import EmailDeliveryLogModel, NotificationModel, ScheduledJobModel, WorkerHeartbeatModel
 from app.infrastructure.database.orm.billing import (
     BillingPlanModel, SubscriptionModel, InvoiceModel,
     OrganizationModel, OrganizationMemberModel,
