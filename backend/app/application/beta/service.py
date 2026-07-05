@@ -74,14 +74,38 @@ class BetaFeedback:
 
 
 class BetaService:
-    """Application-layer service for closed beta operations."""
+    """Application-layer service for beta operations (off / closed / open)."""
 
     def __init__(self) -> None:
         self._settings = get_settings()
 
     @property
+    def beta_mode(self) -> str:
+        """Current beta mode: 'off' | 'closed' | 'open'.
+
+        Backward-compat: if closed_beta_enabled is True, treat as 'closed'.
+        Otherwise use the new beta_mode setting.
+        """
+        # Backward-compat: legacy flag wins if set
+        if self._settings.closed_beta_enabled:
+            return "closed"
+        mode = (self._settings.beta_mode or "off").lower()
+        if mode not in ("off", "closed", "open"):
+            return "off"
+        return mode
+
+    @property
     def is_beta_enabled(self) -> bool:
-        return self._settings.closed_beta_enabled
+        """Backward-compat: True when in closed OR open beta mode."""
+        return self.beta_mode in ("closed", "open")
+
+    @property
+    def is_open_beta(self) -> bool:
+        return self.beta_mode == "open"
+
+    @property
+    def is_closed_beta(self) -> bool:
+        return self.beta_mode == "closed"
 
     @property
     def max_beta_users(self) -> int:
@@ -95,9 +119,28 @@ class BetaService:
         email: str,
         invite_token: str | None,
     ) -> tuple[bool, str | None]:
-        if not self.is_beta_enabled:
+        mode = self.beta_mode
+
+        # OFF mode — anyone can register, no restrictions
+        if mode == "off":
             return (True, None)
 
+        # OPEN mode — anyone can register freely (no invite, no cap).
+        # We still log the registration as a beta event for analytics.
+        if mode == "open":
+            count = await session.scalar(
+                select(func.count()).select_from(UserModel).where(
+                    UserModel.deleted_at.is_(None)
+                )
+            )
+            logger.info(
+                "open_beta_registration",
+                email=email,
+                current_user_count=count or 0,
+            )
+            return (True, None)
+
+        # CLOSED mode — invite token required, capped at max_beta_users
         count = await session.scalar(
             select(func.count()).select_from(UserModel).where(
                 UserModel.deleted_at.is_(None)

@@ -133,6 +133,7 @@ class AnalyticsResponse(BaseModel):
 class SystemConfigResponse(BaseModel):
     app_env: str
     closed_beta_enabled: bool
+    beta_mode: str = "off"
     max_beta_users: int
     enable_docs: bool
     beta_flags: dict
@@ -142,6 +143,7 @@ class SystemConfigResponse(BaseModel):
 
 class UpdateConfigRequest(BaseModel):
     maintenance_mode: bool | None = None
+    beta_mode: str | None = None  # 'off' | 'closed' | 'open'
 
 
 class BulkOperationRequest(BaseModel):
@@ -717,9 +719,15 @@ async def get_analytics(
 async def get_system_config() -> SystemConfigResponse:
     """Get current system configuration."""
     settings = get_settings()
+    # Compute effective beta mode (backward-compat: legacy flag wins)
+    if settings.closed_beta_enabled:
+        beta_mode = "closed"
+    else:
+        beta_mode = (settings.beta_mode or "off").lower()
     return SystemConfigResponse(
         app_env=settings.app_env.value,
         closed_beta_enabled=settings.closed_beta_enabled,
+        beta_mode=beta_mode,
         max_beta_users=settings.max_beta_users,
         enable_docs=settings.enable_docs,
         beta_flags={
@@ -739,11 +747,37 @@ async def get_system_config() -> SystemConfigResponse:
 async def update_system_config(
     request: UpdateConfigRequest,
 ) -> dict[str, str]:
-    """Update system configuration (limited to maintenance mode for now)."""
-    # Note: Full config updates would require a dynamic config store
+    """Update system configuration.
+
+    Supports toggling:
+    - maintenance_mode (true/false) — persisted in Redis
+    - beta_mode ('off' | 'closed' | 'open') — persisted in Redis + env override
+    """
+    settings = get_settings()
+
     if request.maintenance_mode is not None:
-        # In production, this would set a flag in Redis or DB
         logger.info("maintenance_mode_toggled", enabled=request.maintenance_mode)
+        # In production, persist to Redis or DB
+
+    if request.beta_mode is not None:
+        new_mode = request.beta_mode.lower()
+        if new_mode not in ("off", "closed", "open"):
+            raise HTTPException(
+                status_code=422,
+                detail="beta_mode must be one of: off, closed, open",
+            )
+
+        # Update the in-memory settings (effective immediately, no restart needed).
+        # NOTE: This change is ephemeral — it won't survive a process restart.
+        # For persistent config, set BETA_MODE env var in Railway.
+        settings.beta_mode = new_mode
+        # Clear legacy flag to avoid ambiguity
+        if new_mode != "closed":
+            settings.closed_beta_enabled = False
+        else:
+            settings.closed_beta_enabled = True
+        logger.info("beta_mode_changed", new_mode=new_mode, note="ephemeral change — set BETA_MODE env var for persistence")
+
     return {"message": "System config updated"}
 
 

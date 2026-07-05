@@ -163,14 +163,25 @@ class Settings(BaseSettings):
     """Enable /docs and /redoc OpenAPI UI. Disable in production."""
 
     # ================================
-    # Closed Beta
+    # Beta Mode
     # ================================
+    # Three modes:
+    #   "off"    — anyone can register freely (production default)
+    #   "closed" — invite token required, capped at max_beta_users
+    #   "open"   — anyone can register freely, but with a beta banner + feedback loop
+    beta_mode: str = "off"
+    """Beta registration mode: 'off' | 'closed' | 'open'."""
+
+    # Backward-compat: closed_beta_enabled is mapped to beta_mode='closed'
+    # at runtime. New deployments should set BETA_MODE directly.
     closed_beta_enabled: bool = False
-    """When True, registration requires a valid invite token."""
+    """When True, registration requires a valid invite token. (Legacy — use beta_mode='closed' instead.)"""
     max_beta_users: int = 20
     """Maximum number of registered users allowed during closed beta."""
     beta_invite_token_ttl_hours: int = 168  # 7 days
     """How long invite tokens remain valid."""
+    open_beta_welcome_message: str = "Welcome to the MasteryOS Open Beta! Thanks for testing — your feedback shapes the platform."
+    """Message shown to users who register during open beta."""
 
     # ================================
     # Stripe (SaaS payments)

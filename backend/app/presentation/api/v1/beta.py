@@ -100,10 +100,16 @@ class TrackEventRequest(BaseModel):
 
 
 class BetaStatusResponse(BaseModel):
+    # Backward-compat: True when beta_mode is 'closed' OR 'open'
     closed_beta_enabled: bool
+    # New: explicit beta mode
+    beta_mode: str = "off"
+    is_open_beta: bool = False
+    is_closed_beta: bool = False
     max_beta_users: int
     current_user_count: int | None = None
     feature_flags: dict[str, bool]
+    welcome_message: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -140,16 +146,25 @@ def _invite_to_response(invite: BetaInvite) -> InviteResponse:
 @router.get(
     "/beta/status",
     response_model=BetaStatusResponse,
-    summary="Get closed beta status",
+    summary="Get beta status (public)",
 )
 async def get_beta_status(
     beta_service: BetaService = Depends(get_beta_service),
 ) -> BetaStatusResponse:
-    """Get the closed beta status + feature flags (public endpoint)."""
+    """Get the beta status + feature flags (public endpoint).
+
+    Returns beta_mode ('off' | 'closed' | 'open') so the frontend can show
+    the appropriate banner and feedback UI.
+    """
+    settings = get_settings()
     return BetaStatusResponse(
         closed_beta_enabled=beta_service.is_beta_enabled,
+        beta_mode=beta_service.beta_mode,
+        is_open_beta=beta_service.is_open_beta,
+        is_closed_beta=beta_service.is_closed_beta,
         max_beta_users=beta_service.max_beta_users,
         feature_flags=beta_service.get_feature_flags(),
+        welcome_message=settings.open_beta_welcome_message if beta_service.is_open_beta else None,
     )
 
 
