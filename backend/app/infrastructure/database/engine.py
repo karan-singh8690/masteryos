@@ -37,6 +37,7 @@ from app.infrastructure.database.orm import (  # noqa: E402, F401
     beta_ops,
     core,
     content,
+    billing,
 )
 
 logger = get_logger(__name__)

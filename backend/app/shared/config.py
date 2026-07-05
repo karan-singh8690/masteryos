@@ -173,6 +173,34 @@ class Settings(BaseSettings):
     """How long invite tokens remain valid."""
 
     # ================================
+    # Stripe (SaaS payments)
+    # ================================
+    stripe_secret_key: str = ""
+    """Stripe API secret key. Empty = dev mode (no real payments)."""
+    stripe_webhook_secret: str = ""
+    """Stripe webhook signing secret."""
+    stripe_publishable_key: str = ""
+    """Stripe publishable key for frontend."""
+
+    # ================================
+    # AI Configuration
+    # ================================
+    ai_enabled: bool = False
+    """Enable AI features."""
+    ai_default_provider: str = "ollama"
+    """Default AI provider."""
+    ollama_host: str = "http://localhost:11434"
+    """Ollama API host."""
+    ollama_model: str = "qwen2.5:7b"
+    """Default Ollama model."""
+    ai_timeout: int = 30
+    """AI request timeout in seconds."""
+    ai_max_tokens: int = 2000
+    """Max tokens for AI responses."""
+    ai_temperature: float = 0.7
+    """AI temperature for response generation."""
+
+    # ================================
     # Beta Feature Flags (dynamically configurable)
     # ================================
     beta_flag_learning_enabled: bool = True
