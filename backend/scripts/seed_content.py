@@ -361,6 +361,27 @@ async def seed_content():
                 print(f"  ✅ Fixed {dg_fixed} template versions with old distractor_generator format")
             else:
                 print("  ✅ All templates already up to date")
+
+            # Ensure algorithm version exists (runs even when content already seeded)
+            from app.infrastructure.database.orm.core import AlgorithmVersionModel
+            existing_algo = await session.execute(
+                select(AlgorithmVersionModel).where(AlgorithmVersionModel.is_active.is_(True))
+            )
+            if not existing_algo.scalar_one_or_none():
+                algo = AlgorithmVersionModel(
+                    version_number=1,
+                    name="MasteryOS v1 (Deterministic)",
+                    description="Default deterministic mastery algorithm.",
+                    parameters={"review_weight": 0.35, "weakness_weight": 0.30, "new_concept_weight": 0.20, "goal_urgency_weight": 0.15, "memory_decay_rate": 0.5, "mastery_threshold": 0.7, "weakness_threshold": 0.3},
+                    is_active=True,
+                    promoted_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+                )
+                session.add(algo)
+                await session.commit()
+                print("  ✅ Created default algorithm version (v1, active)")
+            else:
+                print("  ✅ Algorithm version already exists (active)")
+
             await engine.dispose()
             return
 
