@@ -474,9 +474,9 @@ async def get_adaptive_queue(
             enrollment_id=session.learner_enrollment_id,
             session_id=session.id,
             intent=session.intent,
-            mastery_scores=list(mastery_scores),
-            due_reviews=list(due_reviews),
-            learning_goals=list(goals),
+            mastery_scores=list(mastery_scores or []),
+            due_reviews=list(due_reviews or []),
+            learning_goals=list(goals or []),
             queue_size=min(15, len(template_versions)),
         )
 
