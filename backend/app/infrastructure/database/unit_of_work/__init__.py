@@ -305,10 +305,28 @@ def _extract_aggregate_type(event: DomainEvent) -> str:
 
 
 def _serialize_event(event: DomainEvent) -> dict[str, Any]:
-    """Serialize a domain event to a JSON-compatible dict."""
+    """Serialize a domain event to a JSON-compatible dict.
+
+    Converts UUID, datetime, and other non-JSON-serializable types to
+    strings so the payload can be stored in a JSONB column.
+    """
     import dataclasses
+    from datetime import datetime
+    from uuid import UUID as UUIDType
+
+    def _convert(obj: Any) -> Any:
+        if isinstance(obj, UUIDType):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, dict):
+            return {k: _convert(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_convert(v) for v in obj]
+        return obj
+
     if dataclasses.is_dataclass(event):
-        return dataclasses.asdict(event)
+        return _convert(dataclasses.asdict(event))
     return {"event_type": event.event_type}
 
 
