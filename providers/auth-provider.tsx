@@ -26,9 +26,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Start with false on both server and client to avoid hydration mismatch.
   // The useEffect below sets the real value after mount.
   const [hasToken, setHasToken] = React.useState(false)
+  // Track whether we've mounted on the client (to avoid hydration mismatch
+  // when reading from the persisted zustand store).
+  const [mounted, setMounted] = React.useState(false)
 
   // Check for existing token on mount
   React.useEffect(() => {
+    setMounted(true)
     const token = tokenStorage.getAccessToken()
     setHasToken(!!token)
     if (!token) {
@@ -113,13 +117,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthContextValue = {
     // Use query result if available, otherwise fall back to persisted store user.
-    // This prevents ProtectedRoute from redirecting to /login on every page
-    // refresh while the /users/me query is still loading.
-    user: currentUser ?? user ?? null,
-    isLoading: isLoading || (hasToken && !currentUser && !user),
-    // Authenticated if either: query returned a user, OR we have a persisted
-    // user from a previous session (token in localStorage).
-    isAuthenticated: !!currentUser || (!!user && hasToken),
+    // Before mount, user is null (avoids hydration mismatch with SSR).
+    user: currentUser ?? (mounted ? user : null) ?? null,
+    // Loading if: query is loading, OR we haven't mounted yet (checking token),
+    // OR we have a token but query hasn't returned.
+    isLoading: !mounted || isLoading || (hasToken && !currentUser),
+    // Authenticated if: query returned a user, OR (after mount) we have a
+    // persisted user from a previous session.
+    isAuthenticated: !!currentUser || (mounted && !!user),
     login,
     logout,
     refresh,
