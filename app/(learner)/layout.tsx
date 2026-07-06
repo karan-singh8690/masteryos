@@ -86,7 +86,7 @@ function LearnerSidebar({ className, onNavigate }: LearnerSidebarProps) {
   return (
     <aside
       className={cn(
-        'flex h-full w-64 flex-col bg-[#0A0A0B] text-zinc-300',
+        'flex h-full w-64 flex-col bg-[#0A0A0B]/95 text-zinc-300 backdrop-blur-xl',
         className,
       )}
       aria-label="Learner navigation"
@@ -398,11 +398,13 @@ export default function LearnerLayout({
         </div>
 
         {/* Main content */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="relative flex flex-1 flex-col overflow-hidden">
+          {/* Subtle background glow */}
+          <div className="pointer-events-none absolute inset-0 glow-emerald opacity-20" />
           <LearnerHeader />
           <BetaBanner />
           <main
-            className="flex-1 overflow-y-auto bg-muted/30 p-4 md:p-6 lg:p-8"
+            className="relative flex-1 overflow-y-auto bg-[#08080A] p-4 md:p-6 lg:p-8"
             id="main-content"
             tabIndex={-1}
           >

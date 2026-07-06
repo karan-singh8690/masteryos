@@ -94,12 +94,12 @@ export default function RegisterPage() {
   ]
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-[#08080A]">
       {/* ============================================================ */}
       {/* Left panel — branding / emerald gradient                      */}
       {/* ============================================================ */}
       <aside
-        className="relative hidden overflow-hidden bg-[#08080A] p-10 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between xl:p-14"
+        className="relative hidden overflow-hidden bg-gradient-to-br from-emerald-600 via-teal-700 to-emerald-900 p-10 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between xl:p-14"
         aria-label="MasteryOS branding"
       >
         {/* Glow orbs */}
@@ -194,8 +194,10 @@ export default function RegisterPage() {
       {/* ============================================================ */}
       {/* Right panel — registration form                              */}
       {/* ============================================================ */}
-      <div className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:px-12">
-        <div className="w-full max-w-md">
+      <div className="relative flex flex-1 items-center justify-center px-4 py-10 sm:px-6 lg:px-12">
+        {/* Subtle glow background */}
+        <div className="pointer-events-none absolute inset-0 glow-emerald opacity-30" />
+        <div className="relative w-full max-w-md">
           {/* Mobile brand */}
           <div className="mb-8 flex items-center justify-center gap-2.5 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
@@ -206,8 +208,8 @@ export default function RegisterPage() {
 
           {/* Heading */}
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Create your account</h2>
-            <p className="text-sm text-muted-foreground">
+            <h2 className="text-3xl font-bold tracking-tight text-white">Create your account</h2>
+            <p className="text-sm text-zinc-400">
               Free to start. No credit card required.
             </p>
           </div>
@@ -346,7 +348,7 @@ export default function RegisterPage() {
 
                 <Button
                   type="submit"
-                  className="btn-glow w-full gradient-emerald border-0 text-white shadow-lg shadow-emerald-500/30 transition-all hover:opacity-90 hover:shadow-emerald-500/50"
+                  className="btn-glow w-full gradient-emerald border-0 font-semibold text-black shadow-lg shadow-emerald-500/30 transition-all hover:opacity-90 hover:shadow-emerald-500/50"
                   loading={form.formState.isSubmitting}
                   disabled={form.formState.isSubmitting}
                 >

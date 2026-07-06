@@ -109,8 +109,8 @@ export default function SubjectsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Subjects</h1>
-        <p className="text-sm text-muted-foreground">Choose a subject to start learning</p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">Subjects</h1>
+        <p className="mt-1 text-sm text-zinc-400">Choose a subject to start learning</p>
       </div>
 
       {subjects.length === 0 ? (
@@ -145,7 +145,7 @@ export default function SubjectsPage() {
             return (
               <Card
                 key={subject.id}
-                className="group cursor-pointer rounded-2xl transition-all hover:border-emerald-500/30 hover:shadow-lg hover:shadow-emerald-500/5"
+                className="glass-card group cursor-pointer rounded-2xl"
                 onClick={() => !isEnrolling && handleEnroll(subject.id, subject.name)}
               >
                 <CardHeader>

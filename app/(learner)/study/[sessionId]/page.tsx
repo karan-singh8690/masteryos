@@ -237,17 +237,17 @@ export default function StudySessionPage() {
       {questionLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : question ? (
-        <Card>
+        <Card className="glass-card">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <Badge variant="outline" className="capitalize">
+              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300 capitalize">
                 {question.question_type.replace(/_/g, ' ')}
               </Badge>
-              <Badge variant="secondary" className="capitalize">
+              <Badge variant="secondary" className="bg-white/5 text-zinc-300 capitalize">
                 {question.difficulty}
               </Badge>
             </div>
-            <CardTitle className="text-lg">
+            <CardTitle className="text-xl font-bold text-white">
               {question.prompt.text}
             </CardTitle>
             {question.prompt.code && (
