@@ -131,7 +131,7 @@ class TemplateVersionModel(Base):
     __table_args__ = (
         UniqueConstraint("template_id", "version_number", name="uq_tv_template_version"),
         CheckConstraint("difficulty_estimate IN ('easy', 'medium', 'hard')", name="chk_tv_difficulty"),
-        CheckConstraint("discrimination_estimate >= 0.0 AND discrimination_estimate <= 1.0", name="chk_tv_discrimination"),
+        CheckConstraint("discrimination_estimate::float >= 0.0 AND discrimination_estimate::float <= 1.0", name="chk_tv_discrimination"),
         {"schema": "content"},
     )
 
@@ -145,7 +145,7 @@ class TemplateVersionModel(Base):
     explanation_template: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     hint_tiers: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     difficulty_estimate: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
-    discrimination_estimate: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    discrimination_estimate: Mapped[str] = mapped_column(String(10), nullable=False, default="0.5")
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
 
     template: Mapped[QuestionTemplateModel] = relationship(back_populates="versions")
