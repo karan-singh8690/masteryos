@@ -57,7 +57,10 @@ export default function StartSessionPage() {
 
   React.useEffect(() => {
     if (enrollments && enrollments.length > 0 && !selectedEnrollment) {
-      const active = enrollments.find((e) => e.status === 'active')
+      // Accept both 'active' and 'pending_onboarding' as valid for starting
+      const active = enrollments.find(
+        (e) => e.status === 'active' || e.status === 'pending_onboarding',
+      )
       if (active) setSelectedEnrollment(active.id)
     }
   }, [enrollments, selectedEnrollment])
