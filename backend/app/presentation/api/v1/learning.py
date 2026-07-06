@@ -399,19 +399,20 @@ async def get_adaptive_queue(
     async with uow as _uow:
         session_obj = _uow._session  # type: ignore[union-attr]
 
-        # 1. Load the study session
-        session = await _uow.study_sessions.get_by_id(StudySessionId(session_id))
-        if session is None:
-            raise HTTPException(status_code=404, detail={
-                "code": "SESSION_NOT_FOUND",
-                "message": "Study session not found",
-            })
+        try:
+            # 1. Load the study session
+            session = await _uow.study_sessions.get_by_id(StudySessionId(session_id))
+            if session is None:
+                raise HTTPException(status_code=404, detail={
+                    "code": "SESSION_NOT_FOUND",
+                    "message": "Study session not found",
+                })
 
-        if not session.is_active:
-            raise HTTPException(status_code=409, detail={
-                "code": "SESSION_NOT_ACTIVE",
-                "message": f"Session is not active (status: {session.status})",
-            })
+            if not session.is_active:
+                raise HTTPException(status_code=409, detail={
+                    "code": "SESSION_NOT_ACTIVE",
+                    "message": f"Session is not active (status: {session.status})",
+                })
 
         # 2. Load learner state
         mastery_scores = await _uow.mastery_scores.list_by_enrollment(
@@ -587,3 +588,15 @@ async def get_adaptive_queue(
             current_position=0,
             questions=persisted_questions,
         )
+
+        except HTTPException:
+            raise
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            # Return empty queue instead of 500 so the frontend can handle gracefully
+            return AdaptiveQueueResponse(
+                study_session_id=session_id,
+                current_position=0,
+                questions=[],
+            )
