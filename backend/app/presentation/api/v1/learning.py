@@ -556,7 +556,7 @@ async def get_adaptive_queue(
 
             # Generate deterministic seed from session_id + template_id + position
             seed_input = f"{session_id}:{matched_tv.id}:{generated_count}"
-            seed = int(hashlib.sha256(seed_input.encode()).hexdigest()[:8], 16)
+            seed = int(hashlib.sha256(seed_input.encode()).hexdigest()[:8], 16) & 0x7FFFFFFF  # Mask to positive int32
 
             # Generate the QuestionInstance
             from app.domain.shared.ids import ContentVersionId as CVID
