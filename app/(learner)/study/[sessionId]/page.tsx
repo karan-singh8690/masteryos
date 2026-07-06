@@ -76,11 +76,16 @@ export default function StudySessionPage() {
 
     const timeSpent = Math.floor((Date.now() - startTime) / 1000)
 
+    // Ensure answer is a dict (backend expects dict[str, Any], not string)
+    const answerDict = typeof answer === 'string'
+      ? { choice_id: answer }
+      : answer as Record<string, unknown>
+
     try {
       const result = await submitMutation.mutateAsync({
         questionInstanceId: currentItem.question_instance_id,
         data: {
-          answer: answer as Record<string, unknown>,
+          answer: answerDict,
           answer_type: getAnswerType(question?.question_type || 'multiple_choice'),
           confidence,
           time_spent_seconds: timeSpent,
@@ -122,7 +127,7 @@ export default function StudySessionPage() {
         if (question?.choices && !submitted) {
           const index = parseInt(e.key) - 1
           const choice = question.choices[index]
-          if (choice) setAnswer(choice.id)
+          if (choice) setAnswer({ choice_id: choice.id })
         }
       } else if (e.key === 'Enter' && !submitted && answer) {
         handleSubmit()
