@@ -33,7 +33,7 @@ export default function AuditLogsPage() {
       </div>
 
       {isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div> : (
-        !logs || logs.length === 0 ? <p className="text-sm text-muted-foreground">No audit logs found</p> : (
+        !logs || !Array.isArray(logs) || logs.length === 0 ? <p className="text-sm text-muted-foreground">No audit logs found</p> : (
           <div className="space-y-1">
             {logs.map((log) => (
               <Card key={log.id} hover><CardContent className="flex items-center justify-between p-3">

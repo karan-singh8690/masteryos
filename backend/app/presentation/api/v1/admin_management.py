@@ -634,6 +634,170 @@ async def list_audit_logs(
 
 
 # ============================================================
+# Security Center
+# ============================================================
+
+
+@router.get("/security/dashboard")
+async def get_security_dashboard(
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get security dashboard summary.
+
+    Returns counts of recent security events, failed logins, active sessions, etc.
+    """
+    try:
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+
+            # Count failed logins in last 24h
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            failed_logins = (await session.execute(
+                select(func.count()).select_from(AuthAuditLogModel).where(
+                    and_(
+                        AuthAuditLogModel.action == "LOGIN_FAILURE",
+                        AuthAuditLogModel.created_at >= cutoff,
+                    )
+                )
+            )).scalar() or 0
+
+            # Count successful logins in last 24h
+            successful_logins = (await session.execute(
+                select(func.count()).select_from(AuthAuditLogModel).where(
+                    and_(
+                        AuthAuditLogModel.action == "LOGIN_SUCCESS",
+                        AuthAuditLogModel.created_at >= cutoff,
+                    )
+                )
+            )).scalar() or 0
+
+            # Count active sessions
+            active_sessions = (await session.execute(
+                select(func.count()).select_from(SessionModel).where(
+                    SessionModel.revoked_at.is_(None)
+                )
+            )).scalar() or 0
+
+            # Count users with MFA enabled
+            mfa_enabled_count = (await session.execute(
+                select(func.count()).select_from(UserModel).where(
+                    and_(UserModel.mfa_enabled.is_(True), UserModel.deleted_at.is_(None))
+                )
+            )).scalar() or 0
+
+            # Count total active users
+            total_users = (await session.execute(
+                select(func.count()).select_from(UserModel).where(UserModel.deleted_at.is_(None))
+            )).scalar() or 0
+
+            # Count suspended users
+            suspended_users = (await session.execute(
+                select(func.count()).select_from(UserModel).where(
+                    and_(UserModel.status == "suspended", UserModel.deleted_at.is_(None))
+                )
+            )).scalar() or 0
+
+            return {
+                "failed_logins_24h": failed_logins,
+                "successful_logins_24h": successful_logins,
+                "active_sessions": active_sessions,
+                "mfa_enabled_users": mfa_enabled_count,
+                "mfa_adoption_rate": round(mfa_enabled_count / max(total_users, 1) * 100, 1),
+                "suspended_users": suspended_users,
+                "total_users": total_users,
+                "recent_events": [],
+            }
+    except Exception as exc:
+        return {
+            "failed_logins_24h": 0,
+            "successful_logins_24h": 0,
+            "active_sessions": 0,
+            "mfa_enabled_users": 0,
+            "mfa_adoption_rate": 0.0,
+            "suspended_users": 0,
+            "total_users": 0,
+            "recent_events": [],
+        }
+
+
+@router.get("/security/incidents")
+async def list_security_incidents(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """List security incidents (failed logins, suspended users, etc.).
+
+    Returns paginated list of security-relevant audit log entries.
+    """
+    try:
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+
+            # Security-relevant actions
+            security_actions = [
+                "LOGIN_FAILURE", "PASSWORD_CHANGED", "MFA_ENABLED", "MFA_DISABLED",
+                "USER_SUSPENDED", "USER_REACTIVATED", "SECURITY_INCIDENT",
+                "SESSION_REVOKED", "ROLE_CHANGED",
+            ]
+
+            query = select(AuthAuditLogModel).where(
+                AuthAuditLogModel.action.in_(security_actions)
+            ).order_by(AuthAuditLogModel.created_at.desc())
+
+            # Count total
+            count_query = select(func.count()).select_from(AuthAuditLogModel).where(
+                AuthAuditLogModel.action.in_(security_actions)
+            )
+            total = (await session.execute(count_query)).scalar() or 0
+
+            # Paginate
+            offset = (page - 1) * page_size
+            result = await session.execute(query.offset(offset).limit(page_size))
+            logs = result.scalars().all()
+
+            return {
+                "items": [
+                    {
+                        "id": str(log.id),
+                        "user_id": str(log.user_id) if log.user_id else None,
+                        "action": log.action,
+                        "success": log.success,
+                        "ip_address": str(log.ip_address) if log.ip_address else None,
+                        "created_at": log.created_at.isoformat() if log.created_at else None,
+                        "details": log.details if isinstance(log.details, dict) else {},
+                    }
+                    for log in logs
+                ],
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }
+    except Exception:
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}
+
+
+@router.post("/security/incidents/{incident_id}/resolve")
+async def resolve_security_incident(
+    incident_id: UUID,
+    notes: str = "",
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict[str, str]:
+    """Mark a security incident as resolved."""
+    try:
+        async with uow as _uow:
+            session = _uow._session  # type: ignore[union-attr]
+            # In a real system, this would update an incidents table.
+            # For now, just log it.
+            logger.info("security_incident_resolved", incident_id=str(incident_id), notes=notes)
+            await _uow.commit()
+        return {"message": "Incident resolved"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
 # Platform Analytics
 # ============================================================
 

@@ -121,8 +121,10 @@ export const featureFlagApi = {
 // ============================================================
 
 export const auditLogApi = {
-  list: (params?: AuditLogFilter) =>
-    apiClient.get<AdminAuditLogEntry[]>('/admin/audit-logs', { params }),
+  list: async (params?: AuditLogFilter): Promise<AdminAuditLogEntry[]> => {
+    const res = await apiClient.get<AdminAuditLogEntry[] | { items: AdminAuditLogEntry[] }>('/admin/audit-logs', { params })
+    return Array.isArray(res) ? res : (res?.items ?? [])
+  },
   export: (params?: AuditLogFilter) =>
     apiClient.post<Blob>('/admin/audit-logs/export', params, { responseType: 'blob' }),
 }
@@ -133,8 +135,10 @@ export const auditLogApi = {
 
 export const securityApi = {
   getDashboard: () => apiClient.get<SecurityDashboard>('/admin/security/dashboard'),
-  listIncidents: (params?: PaginationParams) =>
-    apiClient.get<SecurityIncident[]>('/admin/security/incidents', { params }),
+  listIncidents: async (params?: PaginationParams): Promise<SecurityIncident[]> => {
+    const res = await apiClient.get<SecurityIncident[] | { items: SecurityIncident[] }>('/admin/security/incidents', { params })
+    return Array.isArray(res) ? res : (res?.items ?? [])
+  },
   resolveIncident: (id: UUID, notes?: string) =>
     apiClient.post<{ message: string }>(`/admin/security/incidents/${id}/resolve`, { notes }),
 }
@@ -201,8 +205,10 @@ export const notificationOpsApi = {
 // ============================================================
 
 export const emailOpsApi = {
-  list: (params?: { status?: string }) =>
-    apiClient.get<EmailDeliveryLog[]>('/admin/bg/email-delivery', { params }),
+  list: async (params?: { status?: string }): Promise<EmailDeliveryLog[]> => {
+    const res = await apiClient.get<EmailDeliveryLog[] | { items: EmailDeliveryLog[] }>('/admin/bg/email-delivery', { params })
+    return Array.isArray(res) ? res : (res?.items ?? [])
+  },
   retry: (id: UUID) => apiClient.post<{ message: string }>(`/admin/bg/email-delivery/${id}/retry`),
 }
 

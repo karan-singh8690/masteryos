@@ -22,7 +22,7 @@ export default function AdminEmailPage() {
       <div><h1 className="text-2xl font-bold tracking-tight">Email Operations</h1><p className="text-sm text-muted-foreground">Monitor email delivery and retries</p></div>
       <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="sent">Sent</SelectItem><SelectItem value="delivered">Delivered</SelectItem><SelectItem value="failed">Failed</SelectItem><SelectItem value="bounced">Bounced</SelectItem><SelectItem value="deferred">Deferred</SelectItem></SelectContent></Select>
       {isLoading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}</div> : (
-        !emails || emails.length === 0 ? <p className="text-sm text-muted-foreground">No emails found</p> : (
+        !emails || !Array.isArray(emails) || emails.length === 0 ? <p className="text-sm text-muted-foreground">No emails found</p> : (
           <div className="space-y-2">
             {emails.map((e) => (
               <Card key={e.id} hover><CardContent className="flex items-center justify-between p-4">
