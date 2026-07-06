@@ -242,12 +242,12 @@ export function QuestionProgress({ current, total }: QuestionProgressProps) {
   const percentage = total > 0 ? (current / total) * 100 : 0
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">
+    <div className="flex-1 space-y-1">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="whitespace-nowrap font-medium">
           Question {current} of {total}
         </span>
-        <span className="text-muted-foreground">{Math.round(percentage)}%</span>
+        <span className="whitespace-nowrap text-muted-foreground">{Math.round(percentage)}%</span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         <div

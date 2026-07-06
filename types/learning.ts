@@ -187,6 +187,7 @@ export interface AttemptResult {
 
 export interface MasteryScore {
   concept_id: UUID
+  concept_name?: string | null
   memory_score: number
   durable_mastery_score: number
   mastery_score_combined: number

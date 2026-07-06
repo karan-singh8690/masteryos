@@ -385,7 +385,7 @@ function WeakConceptsCard({ concepts }: { concepts: DashboardData['weak_concepts
                   className="group flex items-center gap-3 rounded-xl border border-border/50 bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/60"
                 >
                   <div className="flex-1 space-y-1">
-                    <p className="truncate text-sm font-medium">{concept.concept_id}</p>
+                    <p className="truncate text-sm font-medium">{concept.concept_name || concept.concept_id}</p>
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                         <div

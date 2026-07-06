@@ -326,6 +326,72 @@ async def start_study_session(
     )
 
 
+@router.post(
+    "/study-sessions/{session_id}/abandon",
+    summary="Abandon a study session",
+)
+async def abandon_study_session(
+    session_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict[str, str]:
+    """Abandon a study session (marks it as abandoned, not completed)."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from sqlalchemy import update as sql_update
+            from app.infrastructure.database.orm.core import StudySessionModel
+            from datetime import datetime, timezone
+            await session_obj.execute(
+                sql_update(StudySessionModel)
+                .where(
+                    StudySessionModel.id == session_id,
+                    StudySessionModel.status.in_(["active", "paused"]),
+                )
+                .values(
+                    status="abandoned",
+                    ended_at=datetime.now(timezone.utc),
+                )
+            )
+            await _uow.commit()
+        return {"message": "Session abandoned"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post(
+    "/study-sessions/{session_id}/end",
+    summary="End a study session",
+)
+async def end_study_session(
+    session_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict[str, str]:
+    """End a study session (marks it as completed)."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from sqlalchemy import update as sql_update
+            from app.infrastructure.database.orm.core import StudySessionModel
+            from datetime import datetime, timezone
+            await session_obj.execute(
+                sql_update(StudySessionModel)
+                .where(
+                    StudySessionModel.id == session_id,
+                    StudySessionModel.status.in_(["active", "paused"]),
+                )
+                .values(
+                    status="ended",
+                    ended_at=datetime.now(timezone.utc),
+                )
+            )
+            await _uow.commit()
+        return {"message": "Session ended"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get(
     "/study-sessions/active",
     response_model=StudySessionResponse | None,

@@ -133,6 +133,7 @@ class AttemptResultResponse(BaseModel):
 
 class MasteryScoreDTO(BaseModel):
     concept_id: UUID
+    concept_name: str | None = None
     memory_score: float
     durable_mastery_score: float
     mastery_score_combined: float
@@ -244,6 +245,20 @@ async def get_dashboard(
             weak_scores = [s for s in all_scores if s.is_weak]
             strong_scores = [s for s in all_scores if s.is_proficient_or_above]
 
+            # Load concept names for weak + strong concepts
+            concept_names: dict[str, str] = {}
+            all_concept_ids = [s.concept_id.value for s in all_scores]
+            if all_concept_ids:
+                from app.infrastructure.database.orm.content import ConceptModel
+                from sqlalchemy import select as sa_select
+                concept_result = await session.execute(
+                    sa_select(ConceptModel.id, ConceptModel.name).where(
+                        ConceptModel.id.in_(all_concept_ids)
+                    )
+                )
+                for cid, cname in concept_result.all():
+                    concept_names[str(cid)] = cname
+
             # Load due reviews
             due_reviews = await _uow.reviews.list_due_by_enrollment(enrollment_id)
             today_reviews = len(due_reviews)
@@ -292,6 +307,7 @@ async def get_dashboard(
             weak_concepts=[
                 MasteryScoreDTO(
                     concept_id=s.concept_id.value,
+                    concept_name=concept_names.get(str(s.concept_id.value), "Unknown concept"),
                     memory_score=s.memory_score,
                     durable_mastery_score=s.durable_mastery_score,
                     mastery_score_combined=s.mastery_score_combined,
@@ -305,6 +321,7 @@ async def get_dashboard(
             strong_concepts=[
                 MasteryScoreDTO(
                     concept_id=s.concept_id.value,
+                    concept_name=concept_names.get(str(s.concept_id.value), "Unknown concept"),
                     memory_score=s.memory_score,
                     durable_mastery_score=s.durable_mastery_score,
                     mastery_score_combined=s.mastery_score_combined,
