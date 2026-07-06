@@ -184,6 +184,7 @@ export function useQuestion(questionInstanceId: UUID | null) {
     queryKey: queryKey.learner.question(questionInstanceId!),
     queryFn: () => questionApi.getById(questionInstanceId!),
     enabled: !!questionInstanceId,
+    retry: false, // Don't retry on 404/409 — question may be answered/abandoned
   })
 }
 
@@ -198,12 +199,15 @@ export function useSubmitAnswer() {
       data: SubmitAnswerRequest
     }) => questionApi.submit(questionInstanceId, data),
     onSuccess: (_data, { questionInstanceId }) => {
+      // Invalidate the specific question (so it refetches with updated status)
       queryClient.invalidateQueries({
         queryKey: queryKey.learner.question(questionInstanceId),
       })
+      // Invalidate dashboard so mastery/review data updates
       queryClient.invalidateQueries({ queryKey: queryKey.learner.dashboard() })
-      // Invalidate all adaptive-queue queries (sessionId-based)
-      queryClient.invalidateQueries({ queryKey: ['learner'] })
+      // NOTE: Do NOT invalidate the adaptive queue — the questions don't change,
+      // only their status does. Invalidating the queue causes the current question
+      // to be re-fetched, which can cause 409 errors if the question was just answered.
     },
   })
 }

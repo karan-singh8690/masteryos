@@ -355,6 +355,8 @@ async def get_question(
     """Retrieve a question instance for the learner to answer.
 
     Returns the prompt, choices, and metadata. NEVER exposes the correct answer.
+    Even if the question has already been answered, the question data is returned
+    so the frontend can display it (the frontend checks the answered state separately).
     """
     async with uow as _uow:
         instance = await _uow.question_instances.get_by_id(
@@ -366,19 +368,9 @@ async def get_question(
                 "message": "Question instance not found",
             })
 
-        if instance.is_answered:
-            raise HTTPException(status_code=409, detail={
-                "code": "QUESTION_ALREADY_ANSWERED",
-                "message": "This question has already been answered",
-            })
-
-        if instance.is_abandoned:
-            raise HTTPException(status_code=409, detail={
-                "code": "QUESTION_ABANDONED",
-                "message": "This question has been abandoned",
-            })
-
         # Build response — NEVER include correct_answer
+        # Note: we return the question even if already answered or abandoned,
+        # so the frontend can display it and advance to the next one.
         return QuestionResponse(
             question_instance_id=instance.id.value,
             concept_ids=[],  # Would come from template_concepts join in full implementation
@@ -390,6 +382,7 @@ async def get_question(
             metadata={
                 "served_at": instance.served_at.isoformat(),
                 "session_id": str(instance.study_session_id.value),
+                "status": instance.status,  # "served", "answered", or "abandoned"
             },
         )
 
