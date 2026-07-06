@@ -28,13 +28,13 @@ const SESSION_INTENTS = [
     icon: Clock,
   },
   {
-    value: 'learn_new' as const,
+    value: 'diagnostic' as const,
     label: 'Learn new concepts',
     description: 'Focus on concepts you haven\'t seen yet',
     icon: GraduationCap,
   },
   {
-    value: 'practice' as const,
+    value: 'drill' as const,
     label: 'Practice weak areas',
     description: 'Focus on your weakest concepts',
     icon: Target,
@@ -52,7 +52,7 @@ export default function StartSessionPage() {
   const startMutation = useStartStudySession()
 
   const [selectedEnrollment, setSelectedEnrollment] = React.useState(enrollmentIdParam || '')
-  const [intent, setIntent] = React.useState<'practice' | 'review' | 'learn_new' | 'mixed'>('mixed')
+  const [intent, setIntent] = React.useState<'drill' | 'review' | 'diagnostic' | 'mixed'>('mixed')
   const [questionCount, setQuestionCount] = React.useState(10)
 
   React.useEffect(() => {
@@ -77,7 +77,7 @@ export default function StartSessionPage() {
     try {
       const session = await startMutation.mutateAsync({
         enrollment_id: selectedEnrollment,
-        intent,
+        intent: intent as 'drill' | 'review' | 'diagnostic' | 'mixed',
         target_question_count: questionCount,
       })
       toast.success('Study session started!')

@@ -95,7 +95,7 @@ export interface StudySession {
 
 export interface StartSessionRequest {
   enrollment_id: UUID
-  intent: 'practice' | 'review' | 'learn_new' | 'mixed'
+  intent: 'drill' | 'diagnostic' | 'review' | 'mixed'
   target_question_count?: number
 }
 
