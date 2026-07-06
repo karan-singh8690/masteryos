@@ -496,6 +496,35 @@ async def seed_content():
         print(f"   - {sum(len(c.get('misconceptions', [])) for c in CONCEPTS)} misconceptions")
         print(f"   - {len(QUESTION_TEMPLATES)} question templates (with versions + explanations)")
 
+    # Ensure a default algorithm version exists (required for answer scoring)
+    async with AsyncSession(engine) as session:
+        from app.infrastructure.database.orm.core import AlgorithmVersionModel
+        existing_algo = await session.execute(
+            select(AlgorithmVersionModel).where(AlgorithmVersionModel.is_active.is_(True))
+        )
+        if not existing_algo.scalar_one_or_none():
+            algo = AlgorithmVersionModel(
+                version_number=1,
+                name="MasteryOS v1 (Deterministic)",
+                description="Default deterministic mastery algorithm (no ML). Uses fixed weights for review priority, weakness scoring, and memory decay.",
+                parameters={
+                    "review_weight": 0.35,
+                    "weakness_weight": 0.30,
+                    "new_concept_weight": 0.20,
+                    "goal_urgency_weight": 0.15,
+                    "memory_decay_rate": 0.5,
+                    "mastery_threshold": 0.7,
+                    "weakness_threshold": 0.3,
+                },
+                is_active=True,
+                promoted_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            )
+            session.add(algo)
+            await session.commit()
+            print("   - 1 algorithm version (v1, active)")
+        else:
+            print("   - Algorithm version already exists (active)")
+
     await engine.dispose()
 
 
