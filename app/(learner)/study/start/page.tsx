@@ -82,8 +82,39 @@ export default function StartSessionPage() {
       })
       toast.success('Study session started!')
       router.push(`/study/${session.id}`)
-    } catch {
-      toast.error('Failed to start session. Please try again.')
+    } catch (err: any) {
+      // Handle 409 ACTIVE_SESSION_EXISTS — resume the existing session
+      const errData = err?.response?.data?.detail || err?.detail || {}
+      if (errData.code === 'ACTIVE_SESSION_EXISTS' || errData.existing_session_id) {
+        const existingId = errData.existing_session_id
+        if (existingId) {
+          toast.info('You have an active session. Resuming…')
+          router.push(`/study/${existingId}`)
+        } else {
+          // No session ID returned — try to fetch the active session
+          try {
+            const token = localStorage.getItem('mastery.access_token')
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            const res = await fetch(
+              `${API_URL}/api/v1/study-sessions/active?enrollment_id=${selectedEnrollment}`,
+              { headers: { Authorization: `Bearer ${token}` } },
+            )
+            if (res.ok) {
+              const activeSession = await res.json()
+              if (activeSession?.id) {
+                toast.info('Resuming your active session…')
+                router.push(`/study/${activeSession.id}`)
+                return
+              }
+            }
+          } catch {
+            // ignore
+          }
+          toast.info('You already have an active session.')
+        }
+      } else {
+        toast.error(err?.response?.data?.detail?.message || 'Failed to start session. Please try again.')
+      }
     }
   }
 

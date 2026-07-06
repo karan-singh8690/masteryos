@@ -13,7 +13,7 @@ from datetime import date, datetime, timezone
 from uuid import UUID
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.application.learning.dto import (
@@ -261,9 +261,15 @@ async def start_study_session(
 
     if not result.success:
         if result.error_code == "ACTIVE_SESSION_EXISTS":
+            # Return the existing session ID so the frontend can resume it.
+            # The handler may attach it via result.value or we look it up.
+            existing_session_id = None
+            if result.value is not None:
+                existing_session_id = str(getattr(result.value, 'id', None) or result.value)
             raise HTTPException(status_code=409, detail={
                 "code": result.error_code,
                 "message": result.error,
+                "existing_session_id": existing_session_id,
             })
         if result.error_code == "VALIDATION_FAILED":
             raise HTTPException(status_code=422, detail={
@@ -290,6 +296,38 @@ async def start_study_session(
         ended_at=session.ended_at.isoformat() if session.ended_at else None,
         question_count=session.question_count,
     )
+
+
+@router.get(
+    "/study-sessions/active",
+    response_model=StudySessionResponse | None,
+    summary="Get the active study session for an enrollment",
+)
+async def get_active_study_session(
+    enrollment_id: UUID = Query(..., description="Enrollment ID to check for active session"),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> StudySessionResponse | None:
+    """Get the active (in-progress) study session for an enrollment, if any.
+
+    Returns null if no active session exists.
+    """
+    try:
+        async with uow as _uow:
+            session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
+            if session is None:
+                return None
+            return StudySessionResponse(
+                id=session.id,
+                learner_enrollment_id=session.learner_enrollment_id,
+                intent=session.intent,
+                status=session.status,
+                started_at=session.started_at.isoformat(),
+                ended_at=session.ended_at.isoformat() if session.ended_at else None,
+                question_count=session.question_count,
+            )
+    except Exception:
+        return None
 
 
 @router.get(
