@@ -105,7 +105,7 @@ export default function SessionSummaryPage() {
                 <ul className="space-y-1" role="list">
                   {summary.weak_concepts.map((c) => (
                     <li key={c.concept_id} className="flex items-center justify-between text-sm">
-                      <span className="truncate">{c.concept_id}</span>
+                      <span className="truncate">{(c as any).concept_name || c.concept_id}</span>
                       <Badge variant="destructive" className="text-xs">
                         {Math.round(c.mastery_score_combined * 100)}%
                       </Badge>
@@ -122,7 +122,7 @@ export default function SessionSummaryPage() {
                 <ul className="space-y-1" role="list">
                   {summary.strong_concepts.map((c) => (
                     <li key={c.concept_id} className="flex items-center justify-between text-sm">
-                      <span className="truncate">{c.concept_id}</span>
+                      <span className="truncate">{(c as any).concept_name || c.concept_id}</span>
                       <Badge variant="success" className="text-xs">
                         {Math.round(c.mastery_score_combined * 100)}%
                       </Badge>
@@ -172,7 +172,7 @@ export default function SessionSummaryPage() {
             <ul className="space-y-2" role="list">
               {summary.review_schedule.map((review, i) => (
                 <li key={i} className="flex items-center justify-between text-sm">
-                  <span>{review.concept_id}</span>
+                  <span>{(review as any).concept_name || review.concept_id}</span>
                   <span className="text-muted-foreground">
                     In {review.interval_days} days
                   </span>

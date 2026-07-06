@@ -393,6 +393,131 @@ async def end_study_session(
 
 
 @router.get(
+    "/study-sessions/{session_id}/summary",
+    summary="Get session summary",
+)
+async def get_session_summary(
+    session_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get a summary of a completed (or in-progress) study session.
+
+    Returns questions answered, accuracy, time spent, mastery changes,
+    weak/strong concepts, recommendations, and review schedule.
+    """
+    from sqlalchemy import select, func
+    from app.infrastructure.database.orm.core import (
+        QuestionInstanceModel, AttemptModel, StudySessionModel,
+    )
+
+    async with uow as _uow:
+        session_obj = _uow._session  # type: ignore[union-attr]
+
+        # Load the session
+        study_session = await _uow.study_sessions.get_by_id(StudySessionId(session_id))
+        if study_session is None:
+            raise HTTPException(status_code=404, detail={
+                "code": "SESSION_NOT_FOUND",
+                "message": "Study session not found",
+            })
+
+        # Count question instances for this session
+        instances_result = await session_obj.execute(
+            select(QuestionInstanceModel).where(
+                QuestionInstanceModel.study_session_id == session_id
+            )
+        )
+        instances = instances_result.scalars().all()
+        questions_answered = sum(1 for i in instances if i.status == "answered")
+
+        # Load attempts for this session's instances
+        instance_ids = [i.id for i in instances]
+        attempts: list = []
+        if instance_ids:
+            attempts_result = await session_obj.execute(
+                select(AttemptModel).where(
+                    AttemptModel.question_instance_id.in_(instance_ids)
+                ).order_by(AttemptModel.created_at.desc())
+            )
+            attempts = attempts_result.scalars().all()
+
+        # Compute accuracy
+        correct_count = sum(1 for a in attempts if a.scoring_outcome == "correct")
+        total_attempts = len(attempts)
+        accuracy = (correct_count / total_attempts) if total_attempts > 0 else 0.0
+
+        # Compute time spent
+        started_at = study_session.started_at
+        ended_at = study_session.ended_at or datetime.now(timezone.utc)
+        time_spent = int((ended_at - started_at).total_seconds()) if started_at else 0
+
+        # Load mastery scores for this enrollment
+        all_scores = await _uow.mastery_scores.list_by_enrollment(study_session.learner_enrollment_id)
+        weak_scores = [s for s in all_scores if s.is_weak][:5]
+        strong_scores = [s for s in all_scores if s.is_proficient_or_above][:5]
+
+        # Load concept names
+        concept_names: dict[str, str] = {}
+        all_concept_ids = [s.concept_id.value for s in all_scores]
+        if all_concept_ids:
+            from app.infrastructure.database.orm.content import ConceptModel
+            concept_result = await session_obj.execute(
+                select(ConceptModel.id, ConceptModel.name).where(
+                    ConceptModel.id.in_(all_concept_ids)
+                )
+            )
+            for cid, cname in concept_result.all():
+                concept_names[str(cid)] = cname
+
+        # Build weak/strong concept lists
+        weak_concepts = [
+            {
+                "concept_id": str(s.concept_id.value),
+                "concept_name": concept_names.get(str(s.concept_id.value), "Unknown"),
+                "mastery_score_combined": s.mastery_score_combined,
+            }
+            for s in weak_scores
+        ]
+        strong_concepts = [
+            {
+                "concept_id": str(s.concept_id.value),
+                "concept_name": concept_names.get(str(s.concept_id.value), "Unknown"),
+                "mastery_score_combined": s.mastery_score_combined,
+            }
+            for s in strong_scores
+        ]
+
+        # Load due reviews
+        due_reviews = await _uow.reviews.list_due_by_enrollment(study_session.learner_enrollment_id)
+        review_schedule = [
+            {
+                "concept_id": str(r.concept_id.value),
+                "concept_name": concept_names.get(str(r.concept_id.value), "Unknown"),
+                "interval_days": max(1, (r.due_at - datetime.now(timezone.utc)).days) if r.due_at else 1,
+            }
+            for r in due_reviews[:5]
+        ]
+
+        # Load recommendations (empty for now — no recommendations table wired)
+        recommendations: list = []
+
+        return {
+            "session_id": str(session_id),
+            "questions_answered": questions_answered,
+            "questions_total": len(instances),
+            "accuracy": accuracy,
+            "time_spent_seconds": time_spent,
+            "mastery_gained": 0.0,  # Would need before/after comparison
+            "weak_concepts": weak_concepts,
+            "strong_concepts": strong_concepts,
+            "recommendations": recommendations,
+            "review_schedule": review_schedule,
+            "achievements_unlocked": [],
+        }
+
+
+@router.get(
     "/study-sessions/active",
     response_model=StudySessionResponse | None,
     summary="Get the active study session for an enrollment",
