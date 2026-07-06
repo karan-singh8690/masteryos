@@ -10,7 +10,7 @@ Maps to the OpenAPI contract (Task 006):
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
