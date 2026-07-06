@@ -331,7 +331,11 @@ def _serialize_event(event: DomainEvent) -> dict[str, Any]:
 
 
 class _NullRepository:
-    """Null repository for contexts not yet implemented."""
+    """Null repository for contexts not yet implemented.
+
+    Returns None/[] for all calls so the application doesn't crash
+    when a repository isn't wired up yet.
+    """
 
     async def get_by_id(self, *args: Any, **kwargs: Any) -> None:
         return None
@@ -351,6 +355,9 @@ class _NullRepository:
     async def get_active_by_enrollment(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    async def get_by_enrollment(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return []
+
     async def list_by_enrollment(self, *args: Any, **kwargs: Any) -> list[Any]:
         return []
 
@@ -365,3 +372,18 @@ class _NullRepository:
 
     async def list_all(self, *args: Any, **kwargs: Any) -> list[Any]:
         return []
+
+    async def update(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    async def delete(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    async def record(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def __getattr__(self, name: str) -> Any:
+        """Catch-all: return an async no-op for any missing method."""
+        async def _noop(*args: Any, **kwargs: Any) -> None:
+            return None
+        return _noop
