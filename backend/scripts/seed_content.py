@@ -392,10 +392,8 @@ async def seed_content():
                 id=uuid4(),
                 subject_id=subject.id,
                 code=qt_data["code"],
-                title=qt_data["title"],
                 question_type=qt_data["question_type"],
                 status="published",
-                difficulty_estimate=qt_data["difficulty_estimate"],
                 published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
             )
             session.add(template)
@@ -405,13 +403,13 @@ async def seed_content():
             version = TemplateVersionModel(
                 id=uuid4(),
                 template_id=template.id,
-                version=1,
-                status="published",
-                prompt_template=qt_data["prompt_template"],
-                choices=qt_data.get("choices", []),
-                correct_answer=qt_data["correct_answer"],
-                explanation=qt_data.get("explanation", ""),
-                distractors=qt_data.get("distractors", []),
+                version_number=1,
+                parameter_schema={},
+                prompt_template={"text": qt_data["prompt_template"]},
+                correct_answer_generator={"value": qt_data["correct_answer"]},
+                distractor_generator={"items": qt_data.get("distractors", [])} if qt_data.get("distractors") else None,
+                explanation_template={"text": qt_data.get("explanation", "")},
+                difficulty_estimate=qt_data.get("difficulty_estimate", "medium"),
                 published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
             )
             session.add(version)
@@ -434,11 +432,10 @@ async def seed_content():
                 template_version_id=version.id,
                 outcome_key="correct",
                 content=qt_data.get("explanation", ""),
-                difficulty="medium",
             )
             session.add(explanation)
             await session.flush()
-            print(f"  ✅ Template: {template.title}")
+            print(f"  ✅ Template: {template.code}")
 
         await session.commit()
         print(f"\n✅ Seed complete! Created:")
