@@ -452,9 +452,11 @@ async def submit_answer(
             })
 
         if instance.is_answered:
+            # Instead of 409, return a friendly response indicating the question
+            # was already answered. The frontend can use this to skip to the next.
             raise HTTPException(status_code=409, detail={
                 "code": "QUESTION_ALREADY_ANSWERED",
-                "message": "This question has already been answered",
+                "message": "This question has already been answered. Move to the next question.",
             })
 
         # ============================================================

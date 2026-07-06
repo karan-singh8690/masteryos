@@ -95,8 +95,20 @@ export default function StudySessionPage() {
       })
       setSubmitResult(result)
       setSubmitted(true)
-    } catch {
-      toast.error('Failed to submit answer. Please try again.')
+    } catch (err: any) {
+      // Handle 409 QUESTION_ALREADY_ANSWERED — skip to next question
+      const errData = err?.detail || err?.response?.data?.detail || {}
+      if (errData.code === 'QUESTION_ALREADY_ANSWERED') {
+        toast.info('This question was already answered. Moving to next…')
+        // Auto-advance to next question
+        if (queue && currentIndex < queue.questions.length - 1) {
+          goToNextQuestion()
+        } else {
+          handleEndSession()
+        }
+      } else {
+        toast.error(errData.message || 'Failed to submit answer. Please try again.')
+      }
     }
   }
 

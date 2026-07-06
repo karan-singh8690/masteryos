@@ -562,23 +562,27 @@ async def get_adaptive_queue(
 
         # If questions already exist for this session, return them directly
         # (avoids returning empty queue on page refresh / second call)
+        # IMPORTANT: Only return UNANSWERED questions (status='served').
+        # Answered questions would cause 409 on submit.
         if existing_instances:
-            return AdaptiveQueueResponse(
-                study_session_id=session_id,
-                current_position=0,
-                questions=[
-                    QueueItemDTO(
-                        question_instance_id=qi.id,
-                        concept_id=uuid4(),  # Concept not stored on instance; placeholder
-                        difficulty="medium",
-                        estimated_duration_seconds=30,
-                        recommendation_score=0.5,
-                        reason="existing",
-                    )
-                    for qi in existing_instances
-                    if qi.status in ("served", "answered")
-                ],
-            )
+            unanswered = [qi for qi in existing_instances if qi.status == "served"]
+            if unanswered:
+                return AdaptiveQueueResponse(
+                    study_session_id=session_id,
+                    current_position=0,
+                    questions=[
+                        QueueItemDTO(
+                            question_instance_id=qi.id,
+                            concept_id=uuid4(),  # Concept not stored on instance; placeholder
+                            difficulty="medium",
+                            estimated_duration_seconds=30,
+                            recommendation_score=0.5,
+                            reason="existing",
+                        )
+                        for qi in unanswered
+                    ],
+                )
+            # All questions answered — fall through to generate new ones
 
         # Get active content version (if any)
         from app.infrastructure.database.orm.content import ContentVersionModel
