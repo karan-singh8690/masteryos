@@ -40,7 +40,6 @@ const DOC_SECTIONS = [
   ]},
   { title: 'Reference', items: [
     { slug: 'troubleshooting', label: 'Troubleshooting' },
-    { slug: 'faq', label: 'FAQ' },
   ]},
 ]
 

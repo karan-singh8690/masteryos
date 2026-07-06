@@ -10,7 +10,7 @@ import { BookOpen, Mail, MessageCircle, Activity, ChevronDown, Search, ArrowRigh
 import { cn } from '@/lib/cn'
 
 const SUPPORT_CARDS = [
-  { icon: BookOpen, title: 'Knowledge Base', desc: 'Browse articles and guides', href: '/docs/faq' },
+  { icon: BookOpen, title: 'Knowledge Base', desc: 'Browse articles and guides', href: '/faq' },
   { icon: Mail, title: 'Contact Support', desc: 'Send us a message', href: '#contact-form' },
   { icon: MessageCircle, title: 'Community', desc: 'Join the discussion', href: '#' },
   { icon: Activity, title: 'System Status', desc: 'Check platform health', href: '/status' },

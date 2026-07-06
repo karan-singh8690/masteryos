@@ -23,7 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: '/docs/ai', priority: 0.7, changeFrequency: 'monthly' as const },
     { url: '/docs/learning-engine', priority: 0.7, changeFrequency: 'monthly' as const },
     { url: '/docs/troubleshooting', priority: 0.6, changeFrequency: 'monthly' as const },
-    { url: '/docs/faq', priority: 0.6, changeFrequency: 'monthly' as const },
+    { url: '/faq', priority: 0.6, changeFrequency: 'monthly' as const },
     { url: '/api-explorer', priority: 0.8, changeFrequency: 'weekly' as const },
     { url: '/status', priority: 0.7, changeFrequency: 'daily' as const },
     { url: '/roadmap', priority: 0.8, changeFrequency: 'weekly' as const },

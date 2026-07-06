@@ -34,7 +34,7 @@ const FOOTER_LINKS = {
     { label: 'Blog', href: '/blog' },
     { label: 'Support', href: '/support' },
     { label: 'Status', href: '/status' },
-    { label: 'FAQ', href: '/docs/faq' },
+    { label: 'FAQ', href: '/faq' },
   ],
   Company: [
     { label: 'About', href: '/about' },
