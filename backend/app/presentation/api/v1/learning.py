@@ -243,13 +243,33 @@ async def set_learning_goal(
 )
 async def start_study_session(
     request: StartSessionRequest,
+    force: bool = Query(False, description="If true, abandon any existing active session before starting a new one"),
     user_id: UUID = Depends(get_current_user_id),
     uow: UnitOfWork = Depends(get_uow),
     publisher: OutboxEventPublisher = Depends(get_event_publisher),
     idempotency_key: str | None = Depends(get_idempotency_key),
 ) -> StudySessionResponse:
-    """Start a new study session."""
+    """Start a new study session.
+
+    If an active session already exists:
+    - Without force=true: returns 409 with existing_session_id
+    - With force=true: abandons the existing session and creates a new one
+    """
     handler = StartStudySessionHandler(uow, publisher)
+
+    # If force=true, try to abandon any existing active session first
+    if force:
+        try:
+            async with uow as _uow:
+                from app.domain.shared.kernel import LearnerEnrollmentId
+                existing = await _uow.study_sessions.get_active_by_enrollment(
+                    LearnerEnrollmentId(request.enrollment_id)
+                )
+                if existing is not None:
+                    existing.abandon()
+                    await _uow.commit()
+        except Exception:
+            pass  # Non-fatal — let the handler try normally
 
     command = StartStudySessionCommand(
         enrollment_id=request.enrollment_id,
@@ -262,7 +282,6 @@ async def start_study_session(
     if not result.success:
         if result.error_code == "ACTIVE_SESSION_EXISTS":
             # Return the existing session ID so the frontend can resume it.
-            # The handler may attach it via result.value or we look it up.
             existing_session_id = None
             if result.value is not None:
                 existing_session_id = str(getattr(result.value, 'id', None) or result.value)

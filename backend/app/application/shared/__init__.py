@@ -65,9 +65,13 @@ class CommandResult(Generic[TResult]):
         return cls(success=True, value=value, events=events or [])
 
     @classmethod
-    def fail(cls, error: str, error_code: str = "APPLICATION_ERROR") -> CommandResult[TResult]:
-        """Create a failed result."""
-        return cls(success=False, error=error, error_code=error_code)
+    def fail(cls, error: str, error_code: str = "APPLICATION_ERROR", value: TResult | None = None) -> CommandResult[TResult]:
+        """Create a failed result.
+
+        Optionally includes a value (e.g., the existing resource that caused
+        the conflict) so the API layer can return it to the client.
+        """
+        return cls(success=False, error=error, error_code=error_code, value=value)
 
 
 # ============================================================

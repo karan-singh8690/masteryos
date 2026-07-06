@@ -144,7 +144,13 @@ class StartStudySessionHandler(CommandHandler[StartStudySessionCommand, StudySes
             enrollment_id = LearnerEnrollmentId(command.enrollment_id)
             existing = await uow.study_sessions.get_active_by_enrollment(enrollment_id)
             if existing is not None:
-                return CommandResult.fail("Active session already exists", "ACTIVE_SESSION_EXISTS")
+                # Return the existing session as the result value so the
+                # API layer can include its ID in the 409 response.
+                return CommandResult.fail(
+                    "Active session already exists",
+                    "ACTIVE_SESSION_EXISTS",
+                    value=self._to_dto(existing),
+                )
 
             session = StudySession.start(
                 learner_enrollment_id=enrollment_id,

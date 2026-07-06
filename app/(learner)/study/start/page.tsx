@@ -74,46 +74,78 @@ export default function StartSessionPage() {
       toast.error('Please select an enrollment')
       return
     }
+    const intentValue = intent as 'drill' | 'review' | 'diagnostic' | 'mixed'
     try {
       const session = await startMutation.mutateAsync({
         enrollment_id: selectedEnrollment,
-        intent: intent as 'drill' | 'review' | 'diagnostic' | 'mixed',
+        intent: intentValue,
         target_question_count: questionCount,
       })
       toast.success('Study session started!')
       router.push(`/study/${session.id}`)
     } catch (err: any) {
-      // Handle 409 ACTIVE_SESSION_EXISTS — resume the existing session
+      // Handle 409 ACTIVE_SESSION_EXISTS — resume or force-start
       const errData = err?.response?.data?.detail || err?.detail || {}
-      if (errData.code === 'ACTIVE_SESSION_EXISTS' || errData.existing_session_id) {
+      if (errData.code === 'ACTIVE_SESSION_EXISTS') {
         const existingId = errData.existing_session_id
         if (existingId) {
+          // Resume the existing session
           toast.info('You have an active session. Resuming…')
           router.push(`/study/${existingId}`)
-        } else {
-          // No session ID returned — try to fetch the active session
-          try {
-            const token = localStorage.getItem('mastery.access_token')
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-            const res = await fetch(
-              `${API_URL}/api/v1/study-sessions/active?enrollment_id=${selectedEnrollment}`,
-              { headers: { Authorization: `Bearer ${token}` } },
-            )
-            if (res.ok) {
-              const activeSession = await res.json()
-              if (activeSession?.id) {
-                toast.info('Resuming your active session…')
-                router.push(`/study/${activeSession.id}`)
-                return
-              }
-            }
-          } catch {
-            // ignore
-          }
-          toast.info('You already have an active session.')
+          return
         }
+
+        // No session ID in response — try to fetch the active session
+        try {
+          const token = localStorage.getItem('mastery.access_token')
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const res = await fetch(
+            `${API_URL}/api/v1/study-sessions/active?enrollment_id=${selectedEnrollment}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          )
+          if (res.ok) {
+            const activeSession = await res.json()
+            if (activeSession?.id) {
+              toast.info('Resuming your active session…')
+              router.push(`/study/${activeSession.id}`)
+              return
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        // Still can't find the session — retry with force=true to clear stale session
+        try {
+          toast.info('Clearing stale session and starting fresh…')
+          const token = localStorage.getItem('mastery.access_token')
+          const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+          const res = await fetch(
+            `${API_URL}/api/v1/study-sessions?force=true`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                enrollment_id: selectedEnrollment,
+                intent: intentValue,
+                target_question_count: questionCount,
+              }),
+            },
+          )
+          if (res.ok) {
+            const session = await res.json()
+            if (session?.id) {
+              toast.success('Study session started!')
+              router.push(`/study/${session.id}`)
+              return
+            }
+          }
+        } catch {
+          // ignore
+        }
+        toast.error('Unable to start session. Please try again.')
       } else {
-        toast.error(err?.response?.data?.detail?.message || 'Failed to start session. Please try again.')
+        toast.error(errData.message || 'Failed to start session. Please try again.')
       }
     }
   }
