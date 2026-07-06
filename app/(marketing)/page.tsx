@@ -162,100 +162,120 @@ export default function LandingPage() {
   return (
     <>
       {/* ============================================================
-          Hero
+          Hero — Xbox-style dark premium showcase
          ============================================================ */}
-      <section className="relative overflow-hidden border-b border-border/60">
-        {/* Background layers */}
-        <div className="pointer-events-none absolute inset-0 glow-emerald" aria-hidden="true" />
-        <div className="pointer-events-none absolute inset-0 bg-grid opacity-60 [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_60%,transparent_100%)]" aria-hidden="true" />
+      <section className="relative min-h-[90vh] overflow-hidden">
+        {/* Dark gradient background */}
+        <div className="pointer-events-none absolute inset-0 gradient-dark-hero" aria-hidden="true" />
+        {/* Emerald glow */}
+        <div className="pointer-events-none absolute inset-0 glow-emerald opacity-80" aria-hidden="true" />
+        {/* Grid overlay */}
+        <div className="pointer-events-none absolute inset-0 bg-grid opacity-40 [mask-image:radial-gradient(ellipse_60%_50%_at_50%_30%,#000_60%,transparent_100%)]" aria-hidden="true" />
+        {/* Floating glow orbs */}
+        <div className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl animate-glow-pulse" aria-hidden="true" />
+        <div className="pointer-events-none absolute -right-32 bottom-1/4 h-96 w-96 rounded-full bg-teal-500/8 blur-3xl animate-glow-pulse" style={{ animationDelay: '2s' }} aria-hidden="true" />
 
-        <div className="container relative mx-auto px-4 py-20 text-center md:py-32">
-          <Badge
-            variant="outline"
-            className="mb-6 gap-1.5 border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-400 dark:text-emerald-300"
-          >
+        <div className="container relative mx-auto flex min-h-[90vh] flex-col items-center justify-center px-4 py-20 text-center">
+          {/* Badge */}
+          <div className="animate-fade-in-up mb-8 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-300 backdrop-blur-sm">
             <Sparkles className="h-3.5 w-3.5" />
-            Now in Closed Beta
-          </Badge>
+            Now in Open Beta
+            <span className="ml-1 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-glow-pulse" />
+          </div>
 
-          <h1 className="mx-auto max-w-4xl text-balance text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-5xl md:text-6xl">
-            The Operating System for{' '}
-            <span className="gradient-emerald-text">Learning</span>
+          {/* Headline */}
+          <h1 className="animate-fade-in-up mx-auto max-w-5xl text-balance text-5xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl md:text-7xl lg:text-8xl" style={{ animationDelay: '0.1s' }}>
+            The Operating System
+            <br />
+            for{' '}
+            <span className="gradient-emerald-text animate-gradient">Learning</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-balance text-lg text-muted-foreground md:text-xl">
+          {/* Subheadline */}
+          <p className="animate-fade-in-up mx-auto mt-8 max-w-2xl text-balance text-lg text-muted-foreground md:text-xl" style={{ animationDelay: '0.2s' }}>
             Adaptive mastery tracking that determines the single highest-value learning
             activity for every user. Master Python interviews with measurable, durable mastery —
             not busywork.
           </p>
 
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
+          {/* CTAs */}
+          <div className="animate-fade-in-up mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row" style={{ animationDelay: '0.3s' }}>
             <Button
               size="lg"
               asChild
-              className="gradient-emerald h-12 border-0 px-7 text-base font-semibold text-white shadow-lg shadow-emerald-500/20 transition-transform hover:scale-[1.02] hover:shadow-emerald-500/30"
+              className="btn-glow gradient-emerald h-14 border-0 px-8 text-base font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:scale-[1.03] hover:shadow-emerald-500/50"
             >
               <Link href="/register">
                 Get Started Free
-                <ArrowRight className="ml-1.5 h-4 w-4" />
+                <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>
             <Button
               size="lg"
               variant="outline"
               asChild
-              className="h-12 border-border bg-transparent px-7 text-base font-semibold hover:bg-accent/10 hover:text-foreground"
+              className="glass h-14 border-border/60 px-8 text-base font-semibold backdrop-blur-sm hover:border-emerald-500/40 hover:bg-emerald-500/5"
             >
               <Link href="/docs">View Documentation</Link>
             </Button>
           </div>
 
-          <p className="mt-5 text-sm text-muted-foreground">
+          <p className="animate-fade-in-up mt-6 text-sm text-muted-foreground" style={{ animationDelay: '0.4s' }}>
             No credit card required · Free forever plan · Cancel anytime
           </p>
+
+          {/* Stats bar */}
+          <div className="animate-fade-in-up mt-16 grid w-full max-w-4xl grid-cols-2 gap-6 sm:grid-cols-4" style={{ animationDelay: '0.5s' }}>
+            {STATS.map((stat, i) => (
+              <div key={i} className="glass-card rounded-2xl p-5">
+                <div className="gradient-emerald-text text-3xl font-extrabold md:text-4xl">{stat.value}</div>
+                <div className="mt-1 text-sm text-muted-foreground">{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* ============================================================
-          Feature grid
+          Feature grid — glassmorphism cards
          ============================================================ */}
-      <section className="container mx-auto px-4 py-20 md:py-28">
-        <div className="mx-auto mb-14 max-w-2xl text-center">
-          <Badge variant="outline" className="mb-4 border-border text-muted-foreground">
-            Features
-          </Badge>
-          <h2 className="text-balance text-3xl font-bold tracking-tight md:text-4xl">
-            Everything you need to master Python
-          </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Six core systems that work together to turn scattered practice into measurable,
-            durable mastery.
-          </p>
-        </div>
+      <section className="relative overflow-hidden border-t border-border/40">
+        <div className="pointer-events-none absolute inset-0 glow-emerald opacity-30" aria-hidden="true" />
+        <div className="container relative mx-auto px-4 py-20 md:py-28">
+          <div className="mx-auto mb-14 max-w-2xl text-center">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
+              <Sparkles className="h-3.5 w-3.5" />
+              Features
+            </div>
+            <h2 className="text-balance text-3xl font-bold tracking-tight md:text-5xl">
+              Everything you need to master{' '}
+              <span className="gradient-emerald-text">Python</span>
+            </h2>
+            <p className="mt-4 text-lg text-muted-foreground">
+              Six core systems that work together to turn scattered practice into measurable,
+              durable mastery.
+            </p>
+          </div>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((feature) => {
-            const Icon = feature.icon
-            return (
-              <Card
-                key={feature.title}
-                hover
-                className="group rounded-2xl border-border/70 bg-card/60 backdrop-blur-sm transition-all hover:border-emerald-500/40 hover:shadow-lg hover:shadow-emerald-500/5"
-              >
-                <CardHeader className="p-6">
-                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl gradient-emerald shadow-sm shadow-emerald-500/20">
-                    <Icon className="h-5 w-5 text-white" />
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon
+              return (
+                <div
+                  key={feature.title}
+                  className="glass-card group rounded-2xl p-6"
+                >
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl gradient-emerald shadow-lg shadow-emerald-500/20 transition-transform group-hover:scale-110">
+                    <Icon className="h-6 w-6 text-white" />
                   </div>
-                  <CardTitle className="text-lg">{feature.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6 pt-0">
-                  <CardDescription className="text-[15px] leading-relaxed">
+                  <h3 className="text-lg font-bold text-foreground">{feature.title}</h3>
+                  <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
                     {feature.desc}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            )
-          })}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </section>
 

@@ -27,64 +27,67 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius: 0.5rem;
+  --radius: 0.75rem;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Fira Code', 'Cascadia Code', monospace;
 }
 
-/* Light theme — clean white (#FAFAFA) with emerald accents */
+/* ============================================================
+   DARK PREMIUM THEME — default (always dark, like the video)
+   Deep near-black (#08080A) with emerald + teal accents
+   ============================================================ */
 :root {
-  --background: 0 0% 98%;
-  --foreground: 240 10% 4%;
-  --card: 0 0% 100%;
-  --card-foreground: 240 10% 4%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 4%;
-  --primary: 160 84% 39%;
+  --background: 240 6% 5%;
+  --foreground: 0 0% 96%;
+  --card: 240 6% 8%;
+  --card-foreground: 0 0% 96%;
+  --popover: 240 6% 8%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 160 84% 45%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 240 10% 4%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 14% 45%;
-  --accent: 162 94% 30%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --success: 142 71% 45%;
-  --success-foreground: 0 0% 100%;
-  --warning: 38 92% 50%;
-  --warning-foreground: 240 10% 4%;
-  --border: 220 14% 91%;
-  --input: 220 14% 91%;
-  --ring: 160 84% 39%;
-  --radius: 0.5rem;
-}
-
-/* Dark theme — deep near-black (#0A0A0B) with emerald accents */
-.dark {
-  --background: 240 6% 4%;
-  --foreground: 0 0% 98%;
-  --card: 240 6% 7%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 6% 7%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 160 84% 39%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 240 5% 12%;
-  --secondary-foreground: 0 0% 98%;
+  --secondary: 240 5% 14%;
+  --secondary-foreground: 0 0% 96%;
   --muted: 240 5% 12%;
   --muted-foreground: 220 14% 65%;
-  --accent: 160 63% 51%;
-  --accent-foreground: 240 6% 4%;
-  --destructive: 0 72% 51%;
+  --accent: 160 70% 55%;
+  --accent-foreground: 240 6% 5%;
+  --destructive: 0 72% 55%;
   --destructive-foreground: 0 0% 98%;
-  --success: 142 64% 42%;
-  --success-foreground: 0 0% 98%;
-  --warning: 38 92% 50%;
-  --warning-foreground: 240 6% 4%;
-  --border: 240 6% 13%;
-  --input: 240 6% 13%;
-  --ring: 160 84% 39%;
+  --success: 142 64% 48%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 240 6% 5%;
+  --border: 240 6% 15%;
+  --input: 240 6% 15%;
+  --ring: 160 84% 45%;
+  --radius: 0.75rem;
+}
+
+/* Keep dark class for backwards compat (same values) */
+.dark {
+  --background: 240 6% 5%;
+  --foreground: 0 0% 96%;
+  --card: 240 6% 8%;
+  --card-foreground: 0 0% 96%;
+  --popover: 240 6% 8%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 160 84% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 14%;
+  --secondary-foreground: 0 0% 96%;
+  --muted: 240 5% 12%;
+  --muted-foreground: 220 14% 65%;
+  --accent: 160 70% 55%;
+  --accent-foreground: 240 6% 5%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 98%;
+  --success: 142 64% 48%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 240 6% 5%;
+  --border: 240 6% 15%;
+  --input: 240 6% 15%;
+  --ring: 160 84% 45%;
 }
 
 * {
@@ -131,41 +134,15 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, hsl(var(--muted-foreground)) 50%, transparent);
+  background: color-mix(in srgb, hsl(var(--primary)) 50%, transparent);
 }
 
 .text-balance {
   text-wrap: balance;
 }
 
-.shimmer {
-  position: relative;
-  overflow: hidden;
-}
-
-.shimmer::after {
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0,
-    rgba(255, 255, 255, 0.2) 20%,
-    rgba(255, 255, 255, 0.5) 60%,
-    rgba(255, 255, 255, 0)
-  );
-  animation: shimmer 2s infinite;
-  content: '';
-}
-
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 /* ============================================================
-   Design System Utilities — Emerald / Teal gradients & glass
+   PREMIUM DESIGN SYSTEM — gradients, glass, glow, animations
    ============================================================ */
 
 /* Vibrant emerald-to-teal gradient for CTAs and highlights */
@@ -182,6 +159,14 @@ body {
   color: transparent;
 }
 
+/* Deep dark gradient background for hero sections */
+.gradient-dark-hero {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(16, 185, 129, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 50%, rgba(20, 184, 166, 0.08) 0%, transparent 60%),
+    linear-gradient(180deg, #08080A 0%, #0A0A0B 100%);
+}
+
 /* A softer emerald radial glow used behind hero sections */
 .glow-emerald {
   background: radial-gradient(
@@ -192,27 +177,52 @@ body {
   );
 }
 
+/* Stronger glow for premium cards on hover */
+.glow-emerald-strong {
+  background: radial-gradient(
+    ellipse 60% 80% at 50% 0%,
+    rgba(16, 185, 129, 0.25) 0%,
+    rgba(20, 184, 166, 0.08) 40%,
+    transparent 70%
+  );
+}
+
 /* Glass-morphism surface — theme-aware via CSS variables */
 .glass {
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   background-color: color-mix(in srgb, hsl(var(--card)) 60%, transparent);
   border: 1px solid color-mix(in srgb, hsl(var(--border)) 70%, transparent);
 }
 
 /* Glass surface with a stronger emerald tint for dark-mode cards */
 .glass-emerald {
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   background-color: color-mix(in srgb, hsl(var(--card)) 55%, transparent);
-  border: 1px solid color-mix(in srgb, #34D399 14%, transparent);
+  border: 1px solid color-mix(in srgb, #34D399 18%, transparent);
+}
+
+/* Premium glass card with hover glow effect */
+.glass-card {
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background-color: color-mix(in srgb, hsl(var(--card)) 65%, transparent);
+  border: 1px solid color-mix(in srgb, hsl(var(--border)) 80%, transparent);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  border-color: color-mix(in srgb, #34D399 30%, transparent);
+  box-shadow: 0 0 30px -5px rgba(16, 185, 129, 0.2);
+  transform: translateY(-2px);
 }
 
 /* Subtle dotted grid background for hero sections */
 .bg-grid {
   background-image: radial-gradient(
     circle at 1px 1px,
-    color-mix(in srgb, hsl(var(--muted-foreground)) 22%, transparent) 1px,
+    color-mix(in srgb, hsl(var(--muted-foreground)) 18%, transparent) 1px,
     transparent 0
   );
   background-size: 32px 32px;
@@ -233,4 +243,115 @@ body {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
+}
+
+/* Shimmer effect for loading states */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(16, 185, 129, 0.1) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: shimmer 2s infinite;
+  content: '';
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ============================================================
+   PREMIUM ANIMATIONS
+   ============================================================ */
+
+/* Smooth fade-in for page content */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+/* Slow pulse for glowing elements */
+@keyframes glowPulse {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.animate-glow-pulse {
+  animation: glowPulse 4s ease-in-out infinite;
+}
+
+/* Floating animation for hero elements */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Gradient shift for animated backgrounds */
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* Premium button glow on hover */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-glow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.btn-glow:hover::before {
+  left: 100%;
 }

@@ -99,12 +99,15 @@ export default function RegisterPage() {
       {/* Left panel — branding / emerald gradient                      */}
       {/* ============================================================ */}
       <aside
-        className="relative hidden overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 p-10 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between xl:p-14"
+        className="relative hidden overflow-hidden bg-[#08080A] p-10 text-white lg:flex lg:w-1/2 lg:flex-col lg:justify-between xl:p-14"
         aria-label="MasteryOS branding"
       >
+        {/* Glow orbs */}
+        <div className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 rounded-full bg-emerald-500/15 blur-3xl animate-glow-pulse" aria-hidden="true" />
+        <div className="pointer-events-none absolute -right-20 bottom-1/4 h-80 w-80 rounded-full bg-teal-500/10 blur-3xl animate-glow-pulse" style={{ animationDelay: '2s' }} aria-hidden="true" />
         {/* Decorative dot grid */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          className="pointer-events-none absolute inset-0 opacity-[0.08]"
           style={{
             backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
             backgroundSize: '28px 28px',
@@ -210,7 +213,7 @@ export default function RegisterPage() {
           </div>
 
           {/* Card */}
-          <div className="mt-8 rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+          <div className="glass-card mt-8 rounded-2xl p-6 sm:p-8">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
                 {error && (
@@ -343,7 +346,7 @@ export default function RegisterPage() {
 
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/20 transition-all hover:from-emerald-600 hover:to-teal-600 hover:shadow-emerald-500/30"
+                  className="btn-glow w-full gradient-emerald border-0 text-white shadow-lg shadow-emerald-500/30 transition-all hover:opacity-90 hover:shadow-emerald-500/50"
                   loading={form.formState.isSubmitting}
                   disabled={form.formState.isSubmitting}
                 >
