@@ -257,17 +257,26 @@ async def start_study_session(
     """
     handler = StartStudySessionHandler(uow, publisher)
 
-    # If force=true, try to abandon any existing active session first
+    # If force=true, abandon any existing active session via direct DB update
     if force:
         try:
             async with uow as _uow:
-                from app.domain.shared.kernel import LearnerEnrollmentId
-                existing = await _uow.study_sessions.get_active_by_enrollment(
-                    LearnerEnrollmentId(request.enrollment_id)
+                session = _uow._session  # type: ignore[union-attr]
+                from sqlalchemy import update as sql_update
+                from app.infrastructure.database.orm.core import StudySessionModel
+                from datetime import datetime, timezone
+                result = await session.execute(
+                    sql_update(StudySessionModel)
+                    .where(
+                        StudySessionModel.learner_enrollment_id == request.enrollment_id,
+                        StudySessionModel.status.in_(["active", "paused"]),
+                    )
+                    .values(
+                        status="abandoned",
+                        ended_at=datetime.now(timezone.utc),
+                    )
                 )
-                if existing is not None:
-                    existing.abandon()
-                    await _uow.commit()
+                await _uow.commit()
         except Exception:
             pass  # Non-fatal — let the handler try normally
 

@@ -23,14 +23,11 @@ const AuthContext = React.createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient()
   const { user, isAuthenticated, setUser, setLoading, logout: storeLogout } = useAuthStore()
-  // Initialize hasToken synchronously from localStorage so the useQuery
-  // can be enabled on first render (avoids a flash of unauthenticated state).
-  const [hasToken, setHasToken] = React.useState(() => {
-    if (typeof window === 'undefined') return false
-    return !!tokenStorage.getAccessToken()
-  })
+  // Start with false on both server and client to avoid hydration mismatch.
+  // The useEffect below sets the real value after mount.
+  const [hasToken, setHasToken] = React.useState(false)
 
-  // Re-check on mount (covers edge cases where storage changed in another tab)
+  // Check for existing token on mount
   React.useEffect(() => {
     const token = tokenStorage.getAccessToken()
     setHasToken(!!token)

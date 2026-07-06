@@ -315,7 +315,34 @@ async def seed_content():
             select(SubjectModel).where(SubjectModel.code == SUBJECT["code"])
         )
         if existing.scalar_one_or_none():
-            print("Content already seeded. Skipping.")
+            print("Content already seeded. Checking for missing current_version_id...")
+
+            # Fix: Link any templates that have null current_version_id
+            from sqlalchemy import update as sql_update
+            from sqlalchemy.orm import selectinload
+            broken_templates = await session.execute(
+                select(QuestionTemplateModel).where(
+                    QuestionTemplateModel.current_version_id.is_(None)
+                )
+            )
+            fixed = 0
+            for tmpl in broken_templates.scalars().all():
+                # Find the latest version for this template
+                ver_result = await session.execute(
+                    select(TemplateVersionModel)
+                    .where(TemplateVersionModel.template_id == tmpl.id)
+                    .order_by(TemplateVersionModel.version_number.desc())
+                    .limit(1)
+                )
+                ver = ver_result.scalar_one_or_none()
+                if ver:
+                    tmpl.current_version_id = ver.id
+                    fixed += 1
+            if fixed > 0:
+                await session.commit()
+                print(f"  ✅ Fixed {fixed} templates with missing current_version_id")
+            else:
+                print("  ✅ All templates already have current_version_id set")
             await engine.dispose()
             return
 
@@ -413,6 +440,12 @@ async def seed_content():
                 published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
             )
             session.add(version)
+            await session.flush()
+
+            # CRITICAL: Link the template's current_version_id to this version.
+            # Without this, the adaptive queue query can't find published templates
+            # (it joins on QuestionTemplateModel.current_version_id == TemplateVersionModel.id).
+            template.current_version_id = version.id
             await session.flush()
 
             # Create template-concept mappings
