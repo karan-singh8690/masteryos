@@ -355,8 +355,8 @@ class _NullRepository:
     async def get_active_by_enrollment(self, *args: Any, **kwargs: Any) -> None:
         return None
 
-    async def get_by_enrollment(self, *args: Any, **kwargs: Any) -> list[Any]:
-        return []
+    async def get_by_enrollment(self, *args: Any, **kwargs: Any) -> None:
+        return None
 
     async def list_by_enrollment(self, *args: Any, **kwargs: Any) -> list[Any]:
         return []
