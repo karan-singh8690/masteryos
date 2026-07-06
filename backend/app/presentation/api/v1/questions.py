@@ -463,20 +463,50 @@ async def submit_answer(
         correct_answer = instance.correct_answer
         learner_answer = request.answer
 
-        # Simple scoring: compare the "choice" field for multiple_choice
+        # The frontend sends {"choice_id": "A"} for multiple_choice questions.
+        # The instance.rendered_choices is a list of {id, text, is_correct} dicts.
+        # The instance.correct_answer is {"answer": "correct answer text"}.
+        #
+        # Scoring logic:
+        # 1. Find the learner's selected choice by choice_id
+        # 2. Check if that choice's is_correct flag is True
+        # 3. Fallback: compare choice text to correct_answer text
         scoring_outcome = ScoringOutcome.INCORRECT
         partial_credit = None
 
-        if correct_answer.get("answer") is not None:
-            if learner_answer.get("choice") == correct_answer["answer"]:
+        learner_choice_id = learner_answer.get("choice_id") or learner_answer.get("choice")
+        rendered_choices = instance.rendered_choices or []
+
+        # Try to find the learner's choice in rendered_choices
+        learner_choice = None
+        for ch in rendered_choices:
+            if ch.get("id") == learner_choice_id:
+                learner_choice = ch
+                break
+
+        if learner_choice is not None:
+            # Primary: use the is_correct flag from rendered_choices
+            if learner_choice.get("is_correct"):
+                scoring_outcome = ScoringOutcome.CORRECT
+            else:
+                # Fallback: compare text to correct_answer
+                correct_text = correct_answer.get("answer", "")
+                if correct_text and learner_choice.get("text") == correct_text:
+                    scoring_outcome = ScoringOutcome.CORRECT
+                else:
+                    scoring_outcome = ScoringOutcome.INCORRECT
+        elif correct_answer.get("answer") is not None:
+            # No rendered_choices match — compare raw answer text
+            learner_text = learner_answer.get("answer") or learner_answer.get("text") or ""
+            if learner_text == correct_answer["answer"]:
                 scoring_outcome = ScoringOutcome.CORRECT
             else:
                 scoring_outcome = ScoringOutcome.INCORRECT
         elif correct_answer.get("choices") is not None:
-            # Code execution or multi-part — simplified for this slice
-            if learner_answer.get("choice") in correct_answer["choices"]:
+            # Multi-part answer
+            if learner_choice_id in correct_answer["choices"]:
                 scoring_outcome = ScoringOutcome.CORRECT
-            elif learner_answer.get("choice") is not None:
+            elif learner_choice_id is not None:
                 scoring_outcome = ScoringOutcome.PARTIAL
                 partial_credit = 0.5
 
@@ -608,6 +638,7 @@ async def submit_answer(
                     hint_used=request.hint_used,
                     correct_answer=correct_answer,
                     learner_answer=learner_answer,
+                    rendered_choices=instance.rendered_choices,
                 )
 
         concept_ids_for_mastery = real_concept_ids
@@ -831,6 +862,7 @@ def _build_explanation(
     hint_used: bool,
     correct_answer: dict[str, Any],
     learner_answer: dict[str, Any],
+    rendered_choices: list[dict[str, Any]] | None = None,
 ) -> str:
     """Build an explanation based on the scoring outcome.
 
@@ -851,8 +883,19 @@ def _build_explanation(
         return f"Partially correct. The full answer is '{correct_value}'. " \
                f"Review the parts you missed and try again."
 
-    # Incorrect
-    learner_value = learner_answer.get("choice", "your answer")
+    # Incorrect — find the learner's selected choice text
+    learner_value = "your answer"
+    learner_choice_id = learner_answer.get("choice_id") or learner_answer.get("choice")
+    if learner_choice_id and rendered_choices:
+        for ch in rendered_choices:
+            if ch.get("id") == learner_choice_id:
+                learner_value = ch.get("text", "your answer")
+                break
+    elif learner_answer.get("answer"):
+        learner_value = learner_answer["answer"]
+    elif learner_answer.get("text"):
+        learner_value = learner_answer["text"]
+
     if hint_used:
         return f"Incorrect. You chose '{learner_value}' but the correct answer is '{correct_value}'. " \
                f"Since you used a hint, here's a more detailed explanation: " \
