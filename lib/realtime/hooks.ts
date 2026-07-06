@@ -45,11 +45,11 @@ export function useLiveDashboard() {
 
   useWebSocketSubscription('study_progress', () => {
     queryClient.invalidateQueries({ queryKey: queryKey.learner.dashboard() })
-    queryClient.invalidateQueries({ queryKey: queryKey.learner.mastery() })
+    queryClient.invalidateQueries({ queryKey: ['mastery'] })
   })
 
   useWebSocketSubscription('queue_update', () => {
-    queryClient.invalidateQueries({ queryKey: queryKey.learner.adaptiveQueue() })
+    queryClient.invalidateQueries({ queryKey: ['learning', 'sessions'] })
   })
 
   useWebSocketSubscription('achievement_unlocked', (msg: WSMessage) => {

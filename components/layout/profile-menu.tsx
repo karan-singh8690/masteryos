@@ -40,20 +40,20 @@ export function ProfileMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="flex items-center gap-2 px-2">
           <Avatar className="h-8 w-8">
-            {profile.avatarUrl && <AvatarImage src={profile.avatarUrl} alt={profile.displayName} />}
+            {profile.avatar_url && <AvatarImage src={profile.avatar_url} alt={profile.display_name} />}
             <AvatarFallback className="text-xs">
-              {getInitials(profile.displayName)}
+              {getInitials(profile.display_name)}
             </AvatarFallback>
           </Avatar>
           <span className="hidden text-sm font-medium sm:inline-block">
-            {profile.displayName}
+            {profile.display_name}
           </span>
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex flex-col gap-1">
-          <span className="font-medium">{profile.displayName}</span>
+          <span className="font-medium">{profile.display_name}</span>
           <span className="text-xs text-muted-foreground">{user.user.email}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

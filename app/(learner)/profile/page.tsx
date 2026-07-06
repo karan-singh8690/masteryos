@@ -45,20 +45,20 @@ function ProfileContent() {
   const form = useForm<UpdateProfileFormData>({
     resolver: zodResolver(updateProfileSchema),
     defaultValues: {
-      displayName: user?.profile?.display_name || user?.profile?.displayName || '',
+      displayName: user?.profile?.display_name || '',
       timezone: user?.profile?.timezone || 'UTC',
       locale: user?.profile?.locale || 'en-US',
-      avatarUrl: user?.profile?.avatar_url || user?.profile?.avatarUrl || '',
+      avatarUrl: user?.profile?.avatar_url || '',
     },
   })
 
   const mutation = useMutation({
     mutationFn: (data: UpdateProfileFormData) =>
       userApi.updateProfile({
-        displayName: data.displayName,
+        display_name: data.displayName,
         timezone: data.timezone,
         locale: data.locale,
-        avatarUrl: data.avatarUrl || undefined,
+        avatar_url: data.avatarUrl || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKey.users.me() })
@@ -79,9 +79,9 @@ function ProfileContent() {
 
   if (!user) return null
 
-  const email = user.user?.email || user.email || ''
-  const displayName = user.profile?.display_name || user.profile?.displayName || 'User'
-  const role = user.user?.role || user.roles?.[0] || 'learner'
+  const email = user.user?.email || ''
+  const displayName = user.profile?.display_name || 'User'
+  const role = user.roles?.[0] || 'learner'
   const status = user.user?.status || 'active'
 
   return (

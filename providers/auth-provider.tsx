@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Update store when user data changes
   React.useEffect(() => {
     if (currentUser) {
-      setUser(currentUser.user)
+      setUser(currentUser)
       setLoading(false)
     } else if (!isLoading && hasToken) {
       // Token exists but user fetch failed — logout
@@ -65,9 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.refresh_token) {
         tokenStorage.setRefreshToken(response.refresh_token)
       }
-      setUser(response.user)
       setHasToken(true)
-      // Invalidate user query to refetch
+      // Don't setUser with bare User — auth provider's useQuery will fetch
+      // the full CurrentUser (with profile + roles + permissions) automatically.
       queryClient.invalidateQueries({ queryKey: queryKey.users.me() })
     },
     [setUser, queryClient],

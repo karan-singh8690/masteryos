@@ -100,7 +100,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
           mutationKey: mutation.mutationKey,
         })
         if (mutationFn && mutationFn.options?.mutationFn) {
-          await mutationFn.options.mutationFn(mutation.variables)
+          await (mutationFn.options.mutationFn as (vars: unknown) => Promise<unknown>)(mutation.variables)
         }
       } catch {
         if (mutation.retryCount < MAX_RETRIES) {

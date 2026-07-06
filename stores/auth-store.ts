@@ -8,22 +8,22 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { CurrentUser, User } from '@/types/auth'
+import type { CurrentUser } from '@/types/auth'
 import { tokenStorage } from '@/lib/api-client'
 
 interface AuthState {
   // State
-  user: User | null
+  user: CurrentUser | null
   isAuthenticated: boolean
   isLoading: boolean
 
   // Actions
-  setUser: (user: User | null) => void
+  setUser: (user: CurrentUser | null) => void
   setCurrentUser: (user: CurrentUser | null) => void
   setAuthenticated: (authenticated: boolean) => void
   setLoading: (loading: boolean) => void
   logout: () => void
-  updateProfile: (profile: Partial<User>) => void
+  updateProfile: (profile: Partial<CurrentUser['profile']>) => void
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -41,7 +41,7 @@ export const useAuthStore = create<AuthState>()(
 
       setCurrentUser: (currentUser) =>
         set({
-          user: currentUser?.user ?? null,
+          user: currentUser ?? null,
           isAuthenticated: currentUser !== null,
         }),
 
@@ -57,7 +57,7 @@ export const useAuthStore = create<AuthState>()(
 
       updateProfile: (profile) =>
         set((state) => ({
-          user: state.user ? { ...state.user, ...profile } : null,
+          user: state.user ? { ...state.user, profile: { ...state.user.profile, ...profile } } : null,
         })),
     }),
     {

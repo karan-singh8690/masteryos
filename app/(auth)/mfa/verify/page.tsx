@@ -19,7 +19,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/forms/form'
-import { authApi, ApiError, tokenStorage } from '@/lib/api-client'
+import { authApi, userApi, ApiError, tokenStorage } from '@/lib/api-client'
 import { mfaVerifySchema, type MfaVerifyFormData } from '@/lib/validations'
 import { ROUTES } from '@/lib/constants'
 import { useAuth } from '@/providers/auth-provider'
@@ -57,19 +57,17 @@ export default function MfaVerifyPage() {
         if (response.refresh_token) {
           tokenStorage.setRefreshToken(response.refresh_token)
         }
-        document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
+        document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict; max-age=2592000'
 
-        // Fetch user role for middleware
+        // Fetch full CurrentUser (with roles + profile + permissions)
         try {
-          const me = await authApi.me()
-          if (me.roles?.length) {
-            document.cookie = `mastery-role=${me.roles[0]}; path=/; SameSite=Strict`
+          const me = await userApi.me()
+          if (me?.roles?.length) {
+            document.cookie = `mastery-role=${me.roles[0]}; path=/; SameSite=Strict; max-age=2592000`
             setUser(me)
-          } else {
-            setUser(response.user)
           }
         } catch {
-          setUser(response.user)
+          // Profile fetch failed — auth provider will retry via useQuery
         }
 
         toast.success('MFA verified! Welcome back.')

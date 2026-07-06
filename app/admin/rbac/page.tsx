@@ -65,6 +65,10 @@ export default function RBACPage() {
   )
 }
 
-function groupByCategory(perms: { code: string; description: string; category: string }[]): Record<string, typeof perms> {
-  return perms.reduce((acc, p) => { (acc[p.category] = acc[p.category] || []).push(p); return acc }, {})
+function groupByCategory(perms: { code: string; description: string; category: string }[]): Record<string, Array<{ code: string; description: string; category: string }>> {
+  return perms.reduce<Record<string, Array<{ code: string; description: string; category: string }>>>((acc, p) => {
+    if (!acc[p.category]) acc[p.category] = []
+    acc[p.category]!.push(p)
+    return acc
+  }, {})
 }

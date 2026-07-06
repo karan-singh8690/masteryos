@@ -23,13 +23,11 @@ import { PasswordStrengthMeter } from '@/components/forms/password-strength-mete
 import { authApi, ApiError, tokenStorage } from '@/lib/api-client'
 import { registerSchema, type RegisterFormData } from '@/lib/validations'
 import { ROUTES } from '@/lib/constants'
-import { useAuth } from '@/providers/auth-provider'
 import { toast } from 'sonner'
 
 export default function RegisterPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { setUser } = useAuth()
   const [error, setError] = React.useState<string | null>(null)
   const [password, setPassword] = React.useState('')
 
@@ -37,12 +35,14 @@ export default function RegisterPage() {
   const inviteToken = searchParams.get('invite_token') || ''
 
   const form = useForm<RegisterFormData>({
-    resolver: zodResolver(registerSchema),
+    resolver: zodResolver(registerSchema) as any,
     defaultValues: {
       email: '',
       password: '',
       confirmPassword: '',
       displayName: '',
+      timezone: 'UTC',
+      locale: 'en-US',
       acceptTerms: false,
     },
   })
@@ -61,8 +61,8 @@ export default function RegisterPage() {
         tokenStorage.setRefreshToken(response.refresh_token)
       }
       // Set auth cookie for middleware
-      document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict'
-      setUser(response.user)
+      document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict; max-age=2592000'
+      // Don't call setUser with bare User — auth provider will fetch CurrentUser via useQuery
       toast.success('Account created! Welcome to MasteryOS.')
       router.push(ROUTES.DASHBOARD)
     } catch (err) {

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Loader2, Mail, Lock, ArrowRight, TrendingUp, Sparkles, Shield } from 'lucide-react'
-import { authApi, ApiError, tokenStorage } from '@/lib/api-client'
+import { authApi, userApi, ApiError, tokenStorage } from '@/lib/api-client'
 import { useAuth, MfaRequiredError } from '@/providers/auth-provider'
 
 export default function LoginPage() {
@@ -51,34 +51,20 @@ export default function LoginPage() {
       // This is what middleware checks — must be set before redirect
       document.cookie = 'mastery-authenticated=true; path=/; SameSite=Strict; max-age=2592000'
 
-      // 5. Try to fetch user profile (non-blocking — don't fail login if this fails)
-      let userData = response.user
+      // 5. Try to fetch full CurrentUser (with roles + profile + permissions)
       try {
-        const me = await authApi.me()
-        userData = me
-        // Set role cookie if available
-        if (me && (me as any).roles && Array.isArray((me as any).roles) && (me as any).roles.length > 0) {
-          document.cookie = `mastery-role=${(me as any).roles[0]}; path=/; SameSite=Strict; max-age=2592000`
-        } else if (me && (me as any).user && (me as any).user.role) {
-          // Backend returns role as a string on user object
-          document.cookie = `mastery-role=${(me as any).user.role}; path=/; SameSite=Strict; max-age=2592000`
+        const me = await userApi.me()
+        if (me && me.roles && Array.isArray(me.roles) && me.roles.length > 0) {
+          document.cookie = `mastery-role=${me.roles[0]}; path=/; SameSite=Strict; max-age=2592000`
+        }
+        if (me && me.user && me.profile) {
+          setUser(me)
         }
       } catch {
-        // Profile fetch failed — user is still authenticated via cookie
-        // Use the user from login response
+        // Profile fetch failed — auth provider will retry via useQuery
       }
 
-      // 6. Set user in auth provider (defensive)
-      if (userData) {
-        const safeUser = {
-          ...(userData as any),
-          roles: Array.isArray((userData as any).roles) ? (userData as any).roles : [],
-          permissions: Array.isArray((userData as any).permissions) ? (userData as any).permissions : [],
-        }
-        setUser(safeUser as any)
-      }
-
-      // 7. Navigate — cookie is already set, middleware will allow
+      // 6. Navigate — cookie is already set, middleware will allow
       router.push(redirect)
     } catch (err: any) {
       if (err instanceof MfaRequiredError) {

@@ -74,8 +74,8 @@ export const registerSchema = z
     password: strongPasswordSchema,
     confirmPassword: z.string().min(1, 'Please confirm your password'),
     displayName: displayNameSchema,
-    timezone: z.string().optional().default('UTC'),
-    locale: z.string().optional().default('en-US'),
+    timezone: z.string().default('UTC'),
+    locale: z.string().default('en-US'),
     acceptTerms: z.boolean().refine((v) => v === true, 'You must accept the terms'),
   })
   .refine((data) => data.password === data.confirmPassword, {

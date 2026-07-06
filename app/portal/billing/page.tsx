@@ -11,7 +11,7 @@ import { tokenStorage } from '@/lib/api-client'
 interface Plan {
   slug: string
   name: string
-  description: string | None
+  description: string | null
   price_cents: number
   currency: string
   interval: string
@@ -46,7 +46,7 @@ export default function BillingPage() {
   async function fetchData() {
     try {
       const token = tokenStorage.getAccessToken()
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
       const [plansRes, subRes] = await Promise.all([
         fetch(`${API_URL}/api/v1/billing/plans`),

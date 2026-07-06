@@ -81,7 +81,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             <>
               {loading && <Loader2 className="animate-spin" aria-hidden="true" />}
               {!loading && leftIcon}
-              {(children as React.ReactElement).props.children}
+              {(children as React.ReactElement<{ children?: React.ReactNode }>).props.children}
               {!loading && rightIcon}
             </>
           ))}

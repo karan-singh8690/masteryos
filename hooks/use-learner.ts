@@ -202,7 +202,8 @@ export function useSubmitAnswer() {
         queryKey: queryKey.learner.question(questionInstanceId),
       })
       queryClient.invalidateQueries({ queryKey: queryKey.learner.dashboard() })
-      queryClient.invalidateQueries({ queryKey: queryKey.learner.adaptiveQueue })
+      // Invalidate all adaptive-queue queries (sessionId-based)
+      queryClient.invalidateQueries({ queryKey: ['learner'] })
     },
   })
 }

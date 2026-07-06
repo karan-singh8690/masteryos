@@ -25,7 +25,8 @@ export function useOpsDashboard() {
 
 // Users
 export function useAdminUsers(params?: AdminUserListParams) {
-  return useQuery({ queryKey: queryKey.admin.users(params), queryFn: () => adminUserApi.list(params) })
+  const filters = params as Record<string, unknown> | undefined
+  return useQuery({ queryKey: queryKey.admin.users(filters), queryFn: () => adminUserApi.list(params as any) })
 }
 export function useAdminUser(id: UUID | null) {
   return useQuery({ queryKey: queryKey.admin.user(id!), queryFn: () => adminUserApi.getById(id!), enabled: !!id })
@@ -125,7 +126,8 @@ export function useDeleteFeatureFlag() {
 
 // Audit Logs
 export function useAuditLogs(params?: AuditLogFilter) {
-  return useQuery({ queryKey: queryKey.admin.auditLogs(params), queryFn: () => auditLogApi.list(params) })
+  const filters = params as Record<string, unknown> | undefined
+  return useQuery({ queryKey: queryKey.admin.auditLogs(filters), queryFn: () => auditLogApi.list(params as any) })
 }
 
 // Security
