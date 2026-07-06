@@ -207,6 +207,19 @@ function Footer() {
 }
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  // The landing page (/) has its own full-screen hero with nav + footer.
+  // Skip the marketing header/footer for it to avoid duplicate navigation.
+  const isLandingPage = pathname === '/'
+
+  if (isLandingPage) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <main className="flex-1">{children}</main>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />

@@ -7,8 +7,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Shield, Smartphone, Monitor, Key, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { AppLayout } from '@/components/layout/app-layout'
-import { ProtectedRoute } from '@/components/layout/route-protection'
 import { Button } from '@/components/ui/button'
 import { PasswordInput } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,13 +28,7 @@ import { changePasswordSchema, type ChangePasswordFormData } from '@/lib/validat
 import { formatRelativeTime, formatDateTime } from '@/lib/format'
 
 export default function SecurityPage() {
-  return (
-    <ProtectedRoute>
-      <AppLayout>
-        <SecurityContent />
-      </AppLayout>
-    </ProtectedRoute>
-  )
+  return <SecurityContent />
 }
 
 function SecurityContent() {

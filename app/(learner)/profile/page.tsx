@@ -7,8 +7,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { User, Mail, Globe, Clock, Save, RotateCcw, Crown, Check } from 'lucide-react'
 
-import { AppLayout } from '@/components/layout/app-layout'
-import { ProtectedRoute } from '@/components/layout/route-protection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,13 +27,7 @@ import { updateProfileSchema, type UpdateProfileFormData } from '@/lib/validatio
 import { GradientAvatar } from '@/components/ui/avatar'
 
 export default function ProfilePage() {
-  return (
-    <ProtectedRoute>
-      <AppLayout>
-        <ProfileContent />
-      </AppLayout>
-    </ProtectedRoute>
-  )
+  return <ProfileContent />
 }
 
 function ProfileContent() {

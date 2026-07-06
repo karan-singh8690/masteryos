@@ -2,8 +2,6 @@
 
 import * as React from 'react'
 
-import { AppLayout } from '@/components/layout/app-layout'
-import { ProtectedRoute } from '@/components/layout/route-protection'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -18,13 +16,7 @@ import { Input } from '@/components/ui/input'
 import { useTheme } from 'next-themes'
 
 export default function SettingsPage() {
-  return (
-    <ProtectedRoute>
-      <AppLayout>
-        <SettingsContent />
-      </AppLayout>
-    </ProtectedRoute>
-  )
+  return <SettingsContent />
 }
 
 function SettingsContent() {
