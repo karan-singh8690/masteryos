@@ -258,9 +258,11 @@ class QuestionFactory:
         """
         distractor_type = generator_spec.get("type", "literal")
 
-        if distractor_type == "literals":
-            # Static distractors with optional misconception tags
-            raw_distractors = generator_spec.get("distractors", [])
+        if distractor_type in ("literals", "literal"):
+            # Static distractors with optional misconception tags.
+            # Supports both "distractors" key (list of strings/dicts) and
+            # "items" key (same format, used by some seed scripts).
+            raw_distractors = generator_spec.get("distractors") or generator_spec.get("items") or []
             rendered: list[dict[str, Any]] = []
 
             for d in raw_distractors:

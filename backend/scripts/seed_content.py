@@ -338,11 +338,29 @@ async def seed_content():
                 if ver:
                     tmpl.current_version_id = ver.id
                     fixed += 1
-            if fixed > 0:
+
+            # Fix: Update distractor_generator format from {"items": [...]}
+            # to {"type": "literals", "distractors": [...]}
+            all_versions = await session.execute(
+                select(TemplateVersionModel).where(
+                    TemplateVersionModel.distractor_generator.is_not(None)
+                )
+            )
+            dg_fixed = 0
+            for ver in all_versions.scalars().all():
+                if ver.distractor_generator and isinstance(ver.distractor_generator, dict):
+                    if "type" not in ver.distractor_generator:
+                        # Old format — convert
+                        items = ver.distractor_generator.get("items", [])
+                        ver.distractor_generator = {"type": "literals", "distractors": items}
+                        dg_fixed += 1
+
+            if fixed > 0 or dg_fixed > 0:
                 await session.commit()
                 print(f"  ✅ Fixed {fixed} templates with missing current_version_id")
+                print(f"  ✅ Fixed {dg_fixed} template versions with old distractor_generator format")
             else:
-                print("  ✅ All templates already have current_version_id set")
+                print("  ✅ All templates already up to date")
             await engine.dispose()
             return
 
@@ -434,7 +452,7 @@ async def seed_content():
                 parameter_schema={},
                 prompt_template={"text": qt_data["prompt_template"]},
                 correct_answer_generator={"value": qt_data["correct_answer"]},
-                distractor_generator={"items": qt_data.get("distractors", [])} if qt_data.get("distractors") else None,
+                distractor_generator={"type": "literals", "distractors": qt_data.get("distractors", [])} if qt_data.get("distractors") else None,
                 explanation_template={"text": qt_data.get("explanation", "")},
                 difficulty_estimate=qt_data.get("difficulty_estimate", "medium"),
                 published_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
