@@ -23,9 +23,14 @@ const AuthContext = React.createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient()
   const { user, isAuthenticated, setUser, setLoading, logout: storeLogout } = useAuthStore()
-  const [hasToken, setHasToken] = React.useState(false)
+  // Initialize hasToken synchronously from localStorage so the useQuery
+  // can be enabled on first render (avoids a flash of unauthenticated state).
+  const [hasToken, setHasToken] = React.useState(() => {
+    if (typeof window === 'undefined') return false
+    return !!tokenStorage.getAccessToken()
+  })
 
-  // Check for existing token on mount
+  // Re-check on mount (covers edge cases where storage changed in another tab)
   React.useEffect(() => {
     const token = tokenStorage.getAccessToken()
     setHasToken(!!token)
@@ -110,9 +115,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient])
 
   const value: AuthContextValue = {
-    user: currentUser ?? null,
-    isLoading: isLoading || (hasToken && !currentUser),
-    isAuthenticated: !!currentUser,
+    // Use query result if available, otherwise fall back to persisted store user.
+    // This prevents ProtectedRoute from redirecting to /login on every page
+    // refresh while the /users/me query is still loading.
+    user: currentUser ?? user ?? null,
+    isLoading: isLoading || (hasToken && !currentUser && !user),
+    // Authenticated if either: query returned a user, OR we have a persisted
+    // user from a previous session (token in localStorage).
+    isAuthenticated: !!currentUser || (!!user && hasToken),
     login,
     logout,
     refresh,
