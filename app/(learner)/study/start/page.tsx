@@ -85,7 +85,8 @@ export default function StartSessionPage() {
       router.push(`/study/${session.id}`)
     } catch (err: any) {
       // Handle 409 ACTIVE_SESSION_EXISTS — resume or force-start
-      const errData = err?.response?.data?.detail || err?.detail || {}
+      // ApiError stores the full detail object in err.detail
+      const errData = err?.detail || err?.response?.data?.detail || {}
       if (errData.code === 'ACTIVE_SESSION_EXISTS') {
         const existingId = errData.existing_session_id
         if (existingId) {

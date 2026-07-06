@@ -66,6 +66,9 @@ export class ApiError extends Error {
     public readonly code: string,
     public readonly fieldErrors?: Record<string, string[]>,
     public readonly correlationId?: string,
+    // Preserve the full detail object from the backend so callers can
+    // access extra fields like existing_session_id, etc.
+    public readonly detail?: Record<string, unknown>,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -92,6 +95,8 @@ export class ApiError extends Error {
         detail.code,
         detail.fields,
         error.config?.headers?.['X-Correlation-ID'] as string | undefined,
+        // Pass the full detail object (includes existing_session_id, etc.)
+        detail as Record<string, unknown>,
       )
     }
 
