@@ -489,9 +489,30 @@ async def get_adaptive_queue(
             QuestionInstanceModel.study_session_id == session_id
         )
         existing_result = await session_obj.execute(existing_stmt)
+        existing_instances = existing_result.scalars().all()
         served_template_ids = set()
-        for qi in existing_result.scalars().all():
+        for qi in existing_instances:
             served_template_ids.add(qi.template_version_id)
+
+        # If questions already exist for this session, return them directly
+        # (avoids returning empty queue on page refresh / second call)
+        if existing_instances:
+            return AdaptiveQueueResponse(
+                study_session_id=session_id,
+                current_position=0,
+                questions=[
+                    QueueItemDTO(
+                        question_instance_id=qi.id,
+                        concept_id=uuid4(),  # Concept not stored on instance; placeholder
+                        difficulty="medium",
+                        estimated_duration_seconds=30,
+                        recommendation_score=0.5,
+                        reason="existing",
+                    )
+                    for qi in existing_instances
+                    if qi.status in ("served", "answered")
+                ],
+            )
 
         # Get active content version (if any)
         from app.infrastructure.database.orm.content import ContentVersionModel
