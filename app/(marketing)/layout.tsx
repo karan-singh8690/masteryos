@@ -12,8 +12,8 @@ const NAV_LINKS = [
   { label: 'Features', href: '/features' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Security', href: '/security' },
-  { label: 'Docs', href: '/docs' },
   { label: 'Blog', href: '/blog' },
+  { label: 'Support', href: '/support' },
 ]
 
 const SOCIAL_LINKS = [
@@ -31,22 +31,19 @@ const FOOTER_LINKS = {
     { label: 'Roadmap', href: '/roadmap' },
   ],
   Resources: [
-    { label: 'Documentation', href: '/docs' },
-    { label: 'SDKs', href: '/sdk' },
     { label: 'Blog', href: '/blog' },
-    { label: 'API Explorer', href: '/api-explorer' },
+    { label: 'Support', href: '/support' },
     { label: 'Status', href: '/status' },
+    { label: 'FAQ', href: '/docs/faq' },
   ],
   Company: [
     { label: 'About', href: '/about' },
     { label: 'Careers', href: '/careers' },
     { label: 'Contact', href: '/contact' },
-    { label: 'Support', href: '/support' },
   ],
   Legal: [
     { label: 'Privacy Policy', href: '/legal/privacy' },
     { label: 'Terms of Service', href: '/legal/terms' },
-    { label: 'Cookie Policy', href: '/legal/privacy' },
   ],
 } as const
 
