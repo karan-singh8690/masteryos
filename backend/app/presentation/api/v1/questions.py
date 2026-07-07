@@ -129,6 +129,11 @@ class AttemptResultResponse(BaseModel):
     time_to_answer_ms: int
     hint_used: bool
     created_at: str
+    # Phase 1 Indian localization: Performance Index
+    marks_delta: float = 0.0  # +1 for correct, -negative_marking for incorrect, 0 for unattempted
+    error_type: str | None = None  # concept_gap, calculation_error, misread, time_pressure
+    speed_score: float = 0.0  # 0-1, higher = faster relative to benchmark
+    performance_index: float = 0.0  # weighted: accuracy*0.4 + speed*0.3 + risk_efficiency*0.3
 
 
 class MasteryScoreDTO(BaseModel):
@@ -187,6 +192,13 @@ class DashboardResponse(BaseModel):
     interview_readiness: float
     memory_trend: list[dict[str, Any]]
     mastery_trend: list[dict[str, Any]]
+    # Phase 1 Indian localization
+    exam_countdown_days: int | None = None
+    target_exam_name: str | None = None
+    negative_marking_factor: float = 0.0
+    performance_index: float = 0.0  # aggregate accuracy + speed + risk
+    total_marks: float = 0.0  # net marks (correct - negative)
+    error_breakdown: dict[str, int] = {}  # {concept_gap: 5, misread: 2, time_pressure: 1}
 
 
 # ============================================================
@@ -266,6 +278,52 @@ async def get_dashboard(
             # Load streak
             streak = await _uow.streaks.get_by_enrollment(enrollment_id)
 
+            # Phase 1 Indian localization: exam countdown + performance index
+            from app.infrastructure.database.orm.core import LearnerEnrollmentModel, AttemptModel
+            enroll_result = await session.execute(
+                select(LearnerEnrollmentModel).where(LearnerEnrollmentModel.id == enrollment_id)
+            )
+            enroll_model = enroll_result.scalar_one_or_none()
+
+            exam_countdown = None
+            target_exam_name = None
+            neg_marking = 0.0
+            perf_index = 0.0
+            total_marks = 0.0
+            error_breakdown: dict[str, int] = {}
+
+            if enroll_model:
+                neg_marking = enroll_model.negative_marking_factor
+                target_exam_name = enroll_model.target_exam_name
+                if enroll_model.target_exam_date:
+                    from datetime import datetime, timezone as tz
+                    now = datetime.now(tz.utc)
+                    delta = enroll_model.target_exam_date - now
+                    exam_countdown = max(0, delta.days)
+
+                # Load recent attempts for performance index + error breakdown
+                attempts_result = await session.execute(
+                    select(AttemptModel).where(
+                        AttemptModel.learner_enrollment_id == enrollment_id
+                    ).order_by(AttemptModel.created_at.desc()).limit(50)
+                )
+                recent_attempts = attempts_result.scalars().all()
+                if recent_attempts:
+                    correct = sum(1 for a in recent_attempts if a.scoring_outcome == "correct")
+                    total = len(recent_attempts)
+                    accuracy = correct / total if total > 0 else 0.0
+                    avg_speed = sum(a.time_to_answer_ms for a in recent_attempts) / total / 1000  # seconds
+                    speed = max(0.0, min(1.0, 1.0 - (avg_speed / 30.0)))
+                    total_marks = sum(getattr(a, 'marks_delta', 0.0) for a in recent_attempts)
+                    risk_eff = max(0, total_marks / total) if total > 0 else 0.0
+                    perf_index = round((accuracy * 0.4) + (speed * 0.3) + (risk_eff * 0.3), 4)
+
+                    # Error breakdown
+                    for a in recent_attempts:
+                        et = getattr(a, 'error_type', None)
+                        if et:
+                            error_breakdown[et] = error_breakdown.get(et, 0) + 1
+
             # Check for active session
             active_session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
 
@@ -338,6 +396,13 @@ async def get_dashboard(
             interview_readiness=interview_readiness,
             memory_trend=memory_trend,
             mastery_trend=mastery_trend,
+            # Phase 1 Indian localization
+            exam_countdown_days=exam_countdown,
+            target_exam_name=target_exam_name,
+            negative_marking_factor=neg_marking,
+            performance_index=perf_index,
+            total_marks=total_marks,
+            error_breakdown=error_breakdown,
         )
     except Exception as exc:
         # If anything goes wrong, return an empty dashboard instead of 500
@@ -511,6 +576,50 @@ async def submit_answer(
             elif learner_choice_id is not None:
                 scoring_outcome = ScoringOutcome.PARTIAL
                 partial_credit = 0.5
+
+        # ============================================================
+        # 2.5 Phase 1 Indian Localization: Performance Index + Negative Marking
+        # ============================================================
+        # Load enrollment for negative marking factor
+        from app.infrastructure.database.orm.core import LearnerEnrollmentModel
+        enrollment_result = await session.execute(
+            select(LearnerEnrollmentModel).where(
+                LearnerEnrollmentModel.id == instance.learner_enrollment_id.value
+            )
+        )
+        enrollment_model = enrollment_result.scalar_one_or_none()
+        neg_marking = enrollment_model.negative_marking_factor if enrollment_model else 0.0
+
+        # Calculate marks_delta: +1 for correct, -neg_marking for incorrect, 0 for partial
+        if scoring_outcome == ScoringOutcome.CORRECT:
+            marks_delta = 1.0
+        elif scoring_outcome == ScoringOutcome.INCORRECT:
+            marks_delta = -neg_marking  # e.g., -0.25 for -1/4 marking
+        else:
+            marks_delta = 0.0
+
+        # Calculate speed score: 1.0 if very fast, 0.0 if very slow
+        # Benchmark: 30 seconds for medium questions
+        benchmark_time = 30  # seconds
+        speed_score = max(0.0, min(1.0, 1.0 - (request.time_spent_seconds / benchmark_time)))
+
+        # Determine error type for incorrect answers (silly mistake tracker)
+        error_type = None
+        if scoring_outcome == ScoringOutcome.INCORRECT:
+            if request.time_spent_seconds < 5:
+                error_type = "time_pressure"  # Answered too fast — didn't think
+            elif request.confidence > 0.7:
+                error_type = "misread"  # High confidence but wrong — likely misread question
+            else:
+                error_type = "concept_gap"  # Genuinely doesn't know
+
+        # Performance Index: weighted combination
+        accuracy_score = 1.0 if scoring_outcome == ScoringOutcome.CORRECT else 0.0
+        risk_efficiency = marks_delta  # Positive = gained marks, negative = lost marks
+        performance_index = round(
+            (accuracy_score * 0.4) + (speed_score * 0.3) + (max(0, risk_efficiency) * 0.3),
+            4
+        )
 
         # ============================================================
         # 3. Load the active algorithm version
@@ -810,6 +919,11 @@ async def submit_answer(
             time_to_answer_ms=attempt.time_to_answer.milliseconds,
             hint_used=attempt.hint_used,
             created_at=attempt.created_at.isoformat(),
+            # Phase 1 Indian localization
+            marks_delta=marks_delta,
+            error_type=error_type,
+            speed_score=round(speed_score, 4),
+            performance_index=performance_index,
         ),
         mastery=MasteryScoreDTO(
             concept_id=mastery_result.concept_id.value,

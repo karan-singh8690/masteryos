@@ -53,6 +53,11 @@ class LearnerEnrollmentModel(Base):
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     unenrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 1 Indian localization: exam date for countdown + proximity scheduling
+    target_exam_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    target_exam_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Phase 1: negative marking mode (e.g., -0.25 for -1/4 marking)
+    negative_marking_factor: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
 
 class StudySessionModel(Base):
@@ -147,6 +152,10 @@ class AttemptModel(TimestampMixin, Base):
     hint_tiers_used: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     misconception_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     attempt_intent: Mapped[str] = mapped_column(String(20), nullable=False, default="practice")
+    # Phase 1 Indian localization: error type tracking (silly mistake tracker)
+    error_type: Mapped[str | None] = mapped_column(String(30), nullable=True)  # concept_gap, calculation_error, misread, time_pressure
+    # Phase 1: marks gained/lost for negative marking
+    marks_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
 
 class AnswerModel(TimestampMixin, Base):

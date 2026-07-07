@@ -120,6 +120,10 @@ class QuestionTemplateModel(Base):
     current_version_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deprecated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 1 Indian localization: PYQ (Previous Year Question) tagging
+    pyq_exam: Mapped[str | None] = mapped_column(String(50), nullable=True)  # e.g., "JEE", "GATE", "NEET"
+    pyq_year: Mapped[int | None] = mapped_column(Integer, nullable=True)  # e.g., 2023
+    pyq_source: Mapped[str | None] = mapped_column(String(200), nullable=True)  # e.g., "JEE Main 2023 Shift 1"
 
     subject: Mapped[SubjectModel] = relationship(back_populates="templates")
     versions: Mapped[list[TemplateVersionModel]] = relationship(back_populates="template", cascade="all, delete-orphan")

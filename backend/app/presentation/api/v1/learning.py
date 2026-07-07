@@ -165,6 +165,68 @@ async def enroll(
     )
 
 
+# ============================================================
+# Phase 1 Indian Localization: Exam Settings
+# ============================================================
+
+
+class ExamSettingsRequest(BaseModel):
+    """Request: set exam date + negative marking for an enrollment."""
+    target_exam_date: str | None = None
+    target_exam_name: str | None = None
+    negative_marking_factor: float = Field(default=0.0, ge=0.0, le=1.0, description="e.g., 0.25 for -1/4 marking")
+
+
+@router.patch(
+    "/enrollments/{enrollment_id}/exam-settings",
+    summary="Set exam date + negative marking (Phase 1 Indian localization)",
+)
+async def set_exam_settings(
+    enrollment_id: UUID,
+    request: ExamSettingsRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Set the target exam date, exam name, and negative marking factor for an enrollment.
+
+    This enables:
+    - Exam countdown on the dashboard
+    - Exam proximity scheduling (review intervals shrink as exam approaches)
+    - Negative marking in scoring (marks deducted for wrong answers)
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import LearnerEnrollmentModel
+            from sqlalchemy import update as sql_update
+            from datetime import datetime
+
+            values = {}
+            if request.target_exam_date is not None:
+                values["target_exam_date"] = datetime.fromisoformat(request.target_exam_date)
+            if request.target_exam_name is not None:
+                values["target_exam_name"] = request.target_exam_name
+            if request.negative_marking_factor is not None:
+                values["negative_marking_factor"] = request.negative_marking_factor
+
+            if values:
+                await session_obj.execute(
+                    sql_update(LearnerEnrollmentModel)
+                    .where(LearnerEnrollmentModel.id == enrollment_id)
+                    .values(**values)
+                )
+                await _uow.commit()
+
+        return {
+            "message": "Exam settings updated",
+            "target_exam_date": request.target_exam_date,
+            "target_exam_name": request.target_exam_name,
+            "negative_marking_factor": request.negative_marking_factor,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.post(
     "/enrollments/{enrollment_id}/learning-goals",
     response_model=LearningGoalResponse,
