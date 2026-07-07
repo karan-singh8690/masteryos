@@ -132,8 +132,11 @@ async def create_tables() -> bool:
 
                 if has_status_column:
                     print("[startup] Database already initialized — running migrations")
+                    # Ensure all schemas exist (including new ones: community, analytics)
+                    new_schemas = ["community", "analytics"]
+                    for schema in new_schemas:
+                        await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {schema}'))
                     # Run create_all to create any NEW tables (Phase 3+4)
-                    # create_all is safe — it only creates tables that don't exist yet
                     print("[startup] Creating any new tables...")
                     await conn.run_sync(Base.metadata.create_all)
                     # Run ALTER TABLE migrations for new columns (Phase 1-4)
