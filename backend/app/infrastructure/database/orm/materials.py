@@ -74,3 +74,25 @@ class StudyMaterialProgressModel(TimestampMixin, Base):
     total_read_time_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class MaterialConceptLinkModel(Base):
+    """ORM model for content.material_concept_links — links PDFs to concepts.
+
+    If is_prerequisite=True, the learner must read at least min_pages_read
+    pages of the material before the queue generator serves questions for
+    that concept.
+    """
+
+    __tablename__ = "material_concept_links"
+    __table_args__ = (
+        Index("idx_mat_concept_link_material", "material_id"),
+        Index("idx_mat_concept_link_concept", "concept_id"),
+        {"schema": "content"},
+    )
+
+    material_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.study_materials.id", ondelete="CASCADE"), nullable=False)
+    concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    is_prerequisite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_pages_read: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    reading_order: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

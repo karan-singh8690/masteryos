@@ -1992,6 +1992,39 @@ async def get_adaptive_queue(
             ))
 
         # 5. Generate queue via DeterministicQueueGenerator (selects + ranks templates)
+        # Phase B: Check reading prerequisites — skip concepts with unread materials
+        blocked_concepts: set = set()
+        try:
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+            prereq_result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(
+                    MaterialConceptLinkModel.is_prerequisite.is_(True),
+                    StudyMaterialModel.status == "published",
+                )
+            )
+            prereq_links = prereq_result.all()
+            if prereq_links:
+                # Get user's reading progress
+                prereq_material_ids = [str(m.id) for _, m in prereq_links]
+                prereq_prog = await session_obj.execute(
+                    select(StudyMaterialProgressModel).where(
+                        StudyMaterialProgressModel.user_id == user_id,
+                        StudyMaterialProgressModel.material_id.in_(prereq_material_ids),
+                    )
+                )
+                prereq_progress = {str(p.material_id): p.pages_read for p in prereq_prog.scalars().all()}
+
+                for link, material in prereq_links:
+                    pages_read = prereq_progress.get(str(material.id), 0)
+                    if pages_read < link.min_pages_read:
+                        blocked_concepts.add(str(link.concept_id))
+        except Exception:
+            pass  # Non-fatal — if check fails, serve questions normally
+
         generator = DeterministicQueueGenerator()
         queue_items = generator.generate(
             enrollment_id=session.learner_enrollment_id,
@@ -2002,6 +2035,10 @@ async def get_adaptive_queue(
             learning_goals=list(goals or []),
             queue_size=min(15, len(template_versions)),
         )
+
+        # Phase B: Filter out items whose concept is blocked by unread prerequisites
+        if blocked_concepts:
+            queue_items = [q for q in queue_items if str(q.concept_id) not in blocked_concepts]
 
         # 6. For each queue item: generate a real QuestionInstance via QuestionFactory
         factory = QuestionFactory()

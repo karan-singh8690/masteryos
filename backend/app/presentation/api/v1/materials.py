@@ -301,6 +301,234 @@ async def get_material(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ============================================================
+# Phase B: Material-Concept Links (Reading Prerequisites)
+# ============================================================
+
+
+class ConceptLinkRequest(BaseModel):
+    """Request: link a material to a concept."""
+    concept_id: UUID
+    is_prerequisite: bool = False
+    min_pages_read: int = 1
+    reading_order: int = 1
+
+
+@router.post(
+    "/materials/{material_id}/concept-links",
+    summary="Link a material to a concept (Phase B — admin only)",
+)
+async def link_material_to_concept(
+    material_id: UUID,
+    request: ConceptLinkRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    _admin: Any = Depends(RequireAdmin),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Link a study material to a concept.
+
+    If is_prerequisite=True, the learner must read at least min_pages_read
+    pages before the queue generator serves questions for that concept.
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import MaterialConceptLinkModel
+
+            link = MaterialConceptLinkModel(
+                material_id=material_id,
+                concept_id=request.concept_id,
+                is_prerequisite=request.is_prerequisite,
+                min_pages_read=request.min_pages_read,
+                reading_order=request.reading_order,
+            )
+            session_obj.add(link)
+            await _uow.commit()
+
+        return {
+            "message": "Material linked to concept",
+            "is_prerequisite": request.is_prerequisite,
+            "min_pages_read": request.min_pages_read,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/concepts/{concept_id}/materials",
+    summary="List materials linked to a concept (Phase B)",
+)
+async def get_concept_materials(
+    concept_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """Get all study materials linked to a concept, with the user's reading progress."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+
+            result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(MaterialConceptLinkModel.concept_id == concept_id)
+                .where(StudyMaterialModel.status == "published")
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            rows = result.all()
+
+            # Get user's progress for these materials
+            material_ids = [str(m.id) for _, m in rows]
+            progress_map = {}
+            if material_ids:
+                prog_result = await session_obj.execute(
+                    select(StudyMaterialProgressModel).where(
+                        StudyMaterialProgressModel.user_id == user_id,
+                        StudyMaterialProgressModel.material_id.in_(material_ids),
+                    )
+                )
+                for p in prog_result.scalars().all():
+                    progress_map[str(p.material_id)] = p
+
+            return [
+                {
+                    "material_id": str(m.id),
+                    "title": m.title,
+                    "description": m.description,
+                    "page_count": m.page_count,
+                    "material_type": m.material_type,
+                    "tags": m.tags,
+                    "is_prerequisite": link.is_prerequisite,
+                    "min_pages_read": link.min_pages_read,
+                    "reading_order": link.reading_order,
+                    "pages_read": progress_map.get(str(m.id), None).pages_read if str(m.id) in progress_map else 0,
+                    "is_completed": progress_map.get(str(m.id), None).is_completed if str(m.id) in progress_map else False,
+                    "prerequisite_met": (
+                        not link.is_prerequisite or
+                        (progress_map.get(str(m.id)) is not None and
+                         progress_map[str(m.id)].pages_read >= link.min_pages_read)
+                    ),
+                }
+                for link, m in rows
+            ]
+    except Exception:
+        return []
+
+
+@router.get(
+    "/materials/prerequisites/check",
+    summary="Check reading prerequisites for concepts (Phase B)",
+)
+async def check_reading_prerequisites(
+    enrollment_id: UUID = Query(..., description="Enrollment to check prerequisites for"),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Check which concepts have unread prerequisite materials.
+
+    Returns:
+    - concepts_with_unread_prerequisites: concepts that can't be served yet
+    - read_first_materials: materials the user should read first
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+            from app.infrastructure.database.orm.content import ConceptModel
+            from app.infrastructure.database.orm.core import LearnerEnrollmentModel
+            from sqlalchemy import func
+
+            # Get the subject_id for this enrollment
+            enroll_result = await session_obj.execute(
+                select(LearnerEnrollmentModel).where(LearnerEnrollmentModel.id == enrollment_id)
+            )
+            enrollment = enroll_result.scalar_one_or_none()
+            if not enrollment:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get all concepts for this subject
+            concepts_result = await session_obj.execute(
+                select(ConceptModel).where(ConceptModel.subject_id == enrollment.subject_id)
+            )
+            concepts = {str(c.id): c.name for c in concepts_result.scalars().all()}
+
+            # Get all prerequisite material links for these concepts
+            concept_ids = list(concepts.keys())
+            if not concept_ids:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            links_result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(
+                    MaterialConceptLinkModel.concept_id.in_(concept_ids),
+                    MaterialConceptLinkModel.is_prerequisite.is_(True),
+                    StudyMaterialModel.status == "published",
+                )
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            links = links_result.all()
+
+            if not links:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get user's progress for all linked materials
+            material_ids = [str(m.id) for _, m in links]
+            prog_result = await session_obj.execute(
+                select(StudyMaterialProgressModel).where(
+                    StudyMaterialProgressModel.user_id == user_id,
+                    StudyMaterialProgressModel.material_id.in_(material_ids),
+                )
+            )
+            progress_map = {}
+            for p in prog_result.scalars().all():
+                progress_map[str(p.material_id)] = p
+
+            # Find unread prerequisites
+            unread_concepts = set()
+            read_first = []
+            seen_materials = set()
+
+            for link, material in links:
+                cid = str(link.concept_id)
+                mid = str(material.id)
+                progress = progress_map.get(mid)
+                pages_read = progress.pages_read if progress else 0
+
+                if pages_read < link.min_pages_read:
+                    # Prerequisite not met
+                    unread_concepts.add(cid)
+                    if mid not in seen_materials:
+                        seen_materials.add(mid)
+                        read_first.append({
+                            "material_id": mid,
+                            "title": material.title,
+                            "description": material.description,
+                            "page_count": material.page_count,
+                            "material_type": material.material_type,
+                            "concept_name": concepts.get(cid, "Unknown"),
+                            "min_pages_read": link.min_pages_read,
+                            "pages_read": pages_read,
+                            "remaining_pages": max(0, link.min_pages_read - pages_read),
+                            "reading_order": link.reading_order,
+                        })
+
+            return {
+                "concepts_with_unread_prerequisites": [
+                    {"concept_id": cid, "concept_name": concepts.get(cid, "Unknown")}
+                    for cid in unread_concepts
+                ],
+                "read_first_materials": sorted(read_first, key=lambda x: x["reading_order"]),
+            }
+    except Exception:
+        return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+
 @router.get(
     "/materials/{material_id}/page/{page_num}",
     summary="Get watermarked page image (view-only, no download)",
@@ -478,6 +706,234 @@ async def update_progress(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ============================================================
+# Phase B: Material-Concept Links (Reading Prerequisites)
+# ============================================================
+
+
+class ConceptLinkRequest(BaseModel):
+    """Request: link a material to a concept."""
+    concept_id: UUID
+    is_prerequisite: bool = False
+    min_pages_read: int = 1
+    reading_order: int = 1
+
+
+@router.post(
+    "/materials/{material_id}/concept-links",
+    summary="Link a material to a concept (Phase B — admin only)",
+)
+async def link_material_to_concept(
+    material_id: UUID,
+    request: ConceptLinkRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    _admin: Any = Depends(RequireAdmin),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Link a study material to a concept.
+
+    If is_prerequisite=True, the learner must read at least min_pages_read
+    pages before the queue generator serves questions for that concept.
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import MaterialConceptLinkModel
+
+            link = MaterialConceptLinkModel(
+                material_id=material_id,
+                concept_id=request.concept_id,
+                is_prerequisite=request.is_prerequisite,
+                min_pages_read=request.min_pages_read,
+                reading_order=request.reading_order,
+            )
+            session_obj.add(link)
+            await _uow.commit()
+
+        return {
+            "message": "Material linked to concept",
+            "is_prerequisite": request.is_prerequisite,
+            "min_pages_read": request.min_pages_read,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/concepts/{concept_id}/materials",
+    summary="List materials linked to a concept (Phase B)",
+)
+async def get_concept_materials(
+    concept_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """Get all study materials linked to a concept, with the user's reading progress."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+
+            result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(MaterialConceptLinkModel.concept_id == concept_id)
+                .where(StudyMaterialModel.status == "published")
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            rows = result.all()
+
+            # Get user's progress for these materials
+            material_ids = [str(m.id) for _, m in rows]
+            progress_map = {}
+            if material_ids:
+                prog_result = await session_obj.execute(
+                    select(StudyMaterialProgressModel).where(
+                        StudyMaterialProgressModel.user_id == user_id,
+                        StudyMaterialProgressModel.material_id.in_(material_ids),
+                    )
+                )
+                for p in prog_result.scalars().all():
+                    progress_map[str(p.material_id)] = p
+
+            return [
+                {
+                    "material_id": str(m.id),
+                    "title": m.title,
+                    "description": m.description,
+                    "page_count": m.page_count,
+                    "material_type": m.material_type,
+                    "tags": m.tags,
+                    "is_prerequisite": link.is_prerequisite,
+                    "min_pages_read": link.min_pages_read,
+                    "reading_order": link.reading_order,
+                    "pages_read": progress_map.get(str(m.id), None).pages_read if str(m.id) in progress_map else 0,
+                    "is_completed": progress_map.get(str(m.id), None).is_completed if str(m.id) in progress_map else False,
+                    "prerequisite_met": (
+                        not link.is_prerequisite or
+                        (progress_map.get(str(m.id)) is not None and
+                         progress_map[str(m.id)].pages_read >= link.min_pages_read)
+                    ),
+                }
+                for link, m in rows
+            ]
+    except Exception:
+        return []
+
+
+@router.get(
+    "/materials/prerequisites/check",
+    summary="Check reading prerequisites for concepts (Phase B)",
+)
+async def check_reading_prerequisites(
+    enrollment_id: UUID = Query(..., description="Enrollment to check prerequisites for"),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Check which concepts have unread prerequisite materials.
+
+    Returns:
+    - concepts_with_unread_prerequisites: concepts that can't be served yet
+    - read_first_materials: materials the user should read first
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+            from app.infrastructure.database.orm.content import ConceptModel
+            from app.infrastructure.database.orm.core import LearnerEnrollmentModel
+            from sqlalchemy import func
+
+            # Get the subject_id for this enrollment
+            enroll_result = await session_obj.execute(
+                select(LearnerEnrollmentModel).where(LearnerEnrollmentModel.id == enrollment_id)
+            )
+            enrollment = enroll_result.scalar_one_or_none()
+            if not enrollment:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get all concepts for this subject
+            concepts_result = await session_obj.execute(
+                select(ConceptModel).where(ConceptModel.subject_id == enrollment.subject_id)
+            )
+            concepts = {str(c.id): c.name for c in concepts_result.scalars().all()}
+
+            # Get all prerequisite material links for these concepts
+            concept_ids = list(concepts.keys())
+            if not concept_ids:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            links_result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(
+                    MaterialConceptLinkModel.concept_id.in_(concept_ids),
+                    MaterialConceptLinkModel.is_prerequisite.is_(True),
+                    StudyMaterialModel.status == "published",
+                )
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            links = links_result.all()
+
+            if not links:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get user's progress for all linked materials
+            material_ids = [str(m.id) for _, m in links]
+            prog_result = await session_obj.execute(
+                select(StudyMaterialProgressModel).where(
+                    StudyMaterialProgressModel.user_id == user_id,
+                    StudyMaterialProgressModel.material_id.in_(material_ids),
+                )
+            )
+            progress_map = {}
+            for p in prog_result.scalars().all():
+                progress_map[str(p.material_id)] = p
+
+            # Find unread prerequisites
+            unread_concepts = set()
+            read_first = []
+            seen_materials = set()
+
+            for link, material in links:
+                cid = str(link.concept_id)
+                mid = str(material.id)
+                progress = progress_map.get(mid)
+                pages_read = progress.pages_read if progress else 0
+
+                if pages_read < link.min_pages_read:
+                    # Prerequisite not met
+                    unread_concepts.add(cid)
+                    if mid not in seen_materials:
+                        seen_materials.add(mid)
+                        read_first.append({
+                            "material_id": mid,
+                            "title": material.title,
+                            "description": material.description,
+                            "page_count": material.page_count,
+                            "material_type": material.material_type,
+                            "concept_name": concepts.get(cid, "Unknown"),
+                            "min_pages_read": link.min_pages_read,
+                            "pages_read": pages_read,
+                            "remaining_pages": max(0, link.min_pages_read - pages_read),
+                            "reading_order": link.reading_order,
+                        })
+
+            return {
+                "concepts_with_unread_prerequisites": [
+                    {"concept_id": cid, "concept_name": concepts.get(cid, "Unknown")}
+                    for cid in unread_concepts
+                ],
+                "read_first_materials": sorted(read_first, key=lambda x: x["reading_order"]),
+            }
+    except Exception:
+        return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+
 @router.get(
     "/materials/{material_id}/progress",
     summary="Get reading progress",
@@ -545,3 +1001,231 @@ async def delete_material(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# Phase B: Material-Concept Links (Reading Prerequisites)
+# ============================================================
+
+
+class ConceptLinkRequest(BaseModel):
+    """Request: link a material to a concept."""
+    concept_id: UUID
+    is_prerequisite: bool = False
+    min_pages_read: int = 1
+    reading_order: int = 1
+
+
+@router.post(
+    "/materials/{material_id}/concept-links",
+    summary="Link a material to a concept (Phase B — admin only)",
+)
+async def link_material_to_concept(
+    material_id: UUID,
+    request: ConceptLinkRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    _admin: Any = Depends(RequireAdmin),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Link a study material to a concept.
+
+    If is_prerequisite=True, the learner must read at least min_pages_read
+    pages before the queue generator serves questions for that concept.
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import MaterialConceptLinkModel
+
+            link = MaterialConceptLinkModel(
+                material_id=material_id,
+                concept_id=request.concept_id,
+                is_prerequisite=request.is_prerequisite,
+                min_pages_read=request.min_pages_read,
+                reading_order=request.reading_order,
+            )
+            session_obj.add(link)
+            await _uow.commit()
+
+        return {
+            "message": "Material linked to concept",
+            "is_prerequisite": request.is_prerequisite,
+            "min_pages_read": request.min_pages_read,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/concepts/{concept_id}/materials",
+    summary="List materials linked to a concept (Phase B)",
+)
+async def get_concept_materials(
+    concept_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """Get all study materials linked to a concept, with the user's reading progress."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+
+            result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(MaterialConceptLinkModel.concept_id == concept_id)
+                .where(StudyMaterialModel.status == "published")
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            rows = result.all()
+
+            # Get user's progress for these materials
+            material_ids = [str(m.id) for _, m in rows]
+            progress_map = {}
+            if material_ids:
+                prog_result = await session_obj.execute(
+                    select(StudyMaterialProgressModel).where(
+                        StudyMaterialProgressModel.user_id == user_id,
+                        StudyMaterialProgressModel.material_id.in_(material_ids),
+                    )
+                )
+                for p in prog_result.scalars().all():
+                    progress_map[str(p.material_id)] = p
+
+            return [
+                {
+                    "material_id": str(m.id),
+                    "title": m.title,
+                    "description": m.description,
+                    "page_count": m.page_count,
+                    "material_type": m.material_type,
+                    "tags": m.tags,
+                    "is_prerequisite": link.is_prerequisite,
+                    "min_pages_read": link.min_pages_read,
+                    "reading_order": link.reading_order,
+                    "pages_read": progress_map.get(str(m.id), None).pages_read if str(m.id) in progress_map else 0,
+                    "is_completed": progress_map.get(str(m.id), None).is_completed if str(m.id) in progress_map else False,
+                    "prerequisite_met": (
+                        not link.is_prerequisite or
+                        (progress_map.get(str(m.id)) is not None and
+                         progress_map[str(m.id)].pages_read >= link.min_pages_read)
+                    ),
+                }
+                for link, m in rows
+            ]
+    except Exception:
+        return []
+
+
+@router.get(
+    "/materials/prerequisites/check",
+    summary="Check reading prerequisites for concepts (Phase B)",
+)
+async def check_reading_prerequisites(
+    enrollment_id: UUID = Query(..., description="Enrollment to check prerequisites for"),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Check which concepts have unread prerequisite materials.
+
+    Returns:
+    - concepts_with_unread_prerequisites: concepts that can't be served yet
+    - read_first_materials: materials the user should read first
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import (
+                MaterialConceptLinkModel, StudyMaterialModel, StudyMaterialProgressModel
+            )
+            from app.infrastructure.database.orm.content import ConceptModel
+            from app.infrastructure.database.orm.core import LearnerEnrollmentModel
+            from sqlalchemy import func
+
+            # Get the subject_id for this enrollment
+            enroll_result = await session_obj.execute(
+                select(LearnerEnrollmentModel).where(LearnerEnrollmentModel.id == enrollment_id)
+            )
+            enrollment = enroll_result.scalar_one_or_none()
+            if not enrollment:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get all concepts for this subject
+            concepts_result = await session_obj.execute(
+                select(ConceptModel).where(ConceptModel.subject_id == enrollment.subject_id)
+            )
+            concepts = {str(c.id): c.name for c in concepts_result.scalars().all()}
+
+            # Get all prerequisite material links for these concepts
+            concept_ids = list(concepts.keys())
+            if not concept_ids:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            links_result = await session_obj.execute(
+                select(MaterialConceptLinkModel, StudyMaterialModel)
+                .join(StudyMaterialModel, MaterialConceptLinkModel.material_id == StudyMaterialModel.id)
+                .where(
+                    MaterialConceptLinkModel.concept_id.in_(concept_ids),
+                    MaterialConceptLinkModel.is_prerequisite.is_(True),
+                    StudyMaterialModel.status == "published",
+                )
+                .order_by(MaterialConceptLinkModel.reading_order.asc())
+            )
+            links = links_result.all()
+
+            if not links:
+                return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
+
+            # Get user's progress for all linked materials
+            material_ids = [str(m.id) for _, m in links]
+            prog_result = await session_obj.execute(
+                select(StudyMaterialProgressModel).where(
+                    StudyMaterialProgressModel.user_id == user_id,
+                    StudyMaterialProgressModel.material_id.in_(material_ids),
+                )
+            )
+            progress_map = {}
+            for p in prog_result.scalars().all():
+                progress_map[str(p.material_id)] = p
+
+            # Find unread prerequisites
+            unread_concepts = set()
+            read_first = []
+            seen_materials = set()
+
+            for link, material in links:
+                cid = str(link.concept_id)
+                mid = str(material.id)
+                progress = progress_map.get(mid)
+                pages_read = progress.pages_read if progress else 0
+
+                if pages_read < link.min_pages_read:
+                    # Prerequisite not met
+                    unread_concepts.add(cid)
+                    if mid not in seen_materials:
+                        seen_materials.add(mid)
+                        read_first.append({
+                            "material_id": mid,
+                            "title": material.title,
+                            "description": material.description,
+                            "page_count": material.page_count,
+                            "material_type": material.material_type,
+                            "concept_name": concepts.get(cid, "Unknown"),
+                            "min_pages_read": link.min_pages_read,
+                            "pages_read": pages_read,
+                            "remaining_pages": max(0, link.min_pages_read - pages_read),
+                            "reading_order": link.reading_order,
+                        })
+
+            return {
+                "concepts_with_unread_prerequisites": [
+                    {"concept_id": cid, "concept_name": concepts.get(cid, "Unknown")}
+                    for cid in unread_concepts
+                ],
+                "read_first_materials": sorted(read_first, key=lambda x: x["reading_order"]),
+            }
+    except Exception:
+        return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}

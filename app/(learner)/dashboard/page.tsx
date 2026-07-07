@@ -25,6 +25,9 @@ import {
   TrendingUp,
   CheckCircle2,
   Sparkles,
+  BookOpen,
+  FileText,
+  ChevronRight,
 } from 'lucide-react'
 
 import { useDashboard } from '@/hooks/use-learner'
@@ -673,6 +676,66 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Phase B: Read First — prerequisite materials */}
+      <ReadFirstCard enrollmentId={String(dashboard.enrollment_id || '')} />
     </div>
+  )
+}
+
+function ReadFirstCard({ enrollmentId }: { enrollmentId: string }) {
+  const [prereqs, setPrereqs] = React.useState<{ read_first_materials: any[] } | null>(null)
+
+  React.useEffect(() => {
+    if (!enrollmentId || enrollmentId === 'null') return
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const token = localStorage.getItem('mastery.access_token')
+    if (!token) return
+    fetch(`${API_URL}/api/v1/materials/prerequisites/check?enrollment_id=${enrollmentId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setPrereqs(d))
+      .catch(() => {})
+  }, [enrollmentId])
+
+  if (!prereqs || !prereqs.read_first_materials || prereqs.read_first_materials.length === 0) return null
+
+  return (
+    <Card className="glass-card rounded-2xl border-amber-500/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold text-amber-400">
+          <BookOpen className="h-4 w-4" />
+          Read These First
+        </CardTitle>
+        <CardDescription>Complete reading prerequisites before practicing these concepts</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {prereqs.read_first_materials.map((m: any) => (
+          <Link
+            key={m.material_id}
+            href={`/materials/${m.material_id}`}
+            className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 ring-1 ring-inset ring-amber-500/20">
+              <FileText className="h-5 w-5 text-amber-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">{m.title}</p>
+              <p className="text-xs text-zinc-500">
+                For: {m.concept_name} · Read {m.pages_read}/{m.min_pages_read} pages
+              </p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-amber-500"
+                  style={{ width: `${Math.min(100, (m.pages_read / Math.max(m.min_pages_read, 1)) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <ChevronRight className="h-5 w-5 shrink-0 text-zinc-600" />
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
   )
 }
