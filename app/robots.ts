@@ -1,12 +1,25 @@
 import type { MetadataRoute } from 'next'
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://masteryos.com'
+const SITE_URL = 'https://masteryos-production.up.railway.app'
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: '*',
-      allow: '/',
+      allow: [
+        '/',
+        '/q/',          // Public question pages (SEO)
+        '/features',
+        '/pricing',
+        '/security',
+        '/blog',
+        '/faq',
+        '/status',
+        '/changelog',
+        '/about',
+        '/support',
+        '/legal/',
+      ],
       disallow: [
         '/api/',
         '/admin/',
@@ -14,16 +27,19 @@ export default function robots(): MetadataRoute.Robots {
         '/study',
         '/settings',
         '/profile',
-        '/security',
         '/notifications',
-        '/login',
-        '/register',
+        '/materials/',
+        '/mastery',
+        '/reviews',
+        '/recommendations',
+        '/achievements',
+        '/portal',
         '/forgot-password',
         '/reset-password',
         '/verify-email',
         '/mfa',
         '/recovery-codes',
-        '/portal',
+        '/docs/',
       ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,

@@ -31,6 +31,7 @@ const PUBLIC_PREFIXES = [
   '/support',
   '/legal',
   '/sdk',
+  '/q/',          // Public question pages (SEO — no auth required)
   '/brand',
   '/manifest.webmanifest',
   '/robots.txt',
