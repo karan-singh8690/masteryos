@@ -936,6 +936,554 @@ async def create_upi_payment(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ============================================================
+# Phase 4 Indian Localization: Delta Sync + Question Packs
+# ============================================================
+
+
+@router.get(
+    "/sync/question-packs",
+    summary="Download question packs for offline study (Phase 4)",
+)
+async def get_question_packs(
+    subject_id: UUID | None = Query(None),
+    exam_name: str | None = Query(None),
+    since_version: int = Query(0, description="Only return packs newer than this version"),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get question packs for offline download.
+
+    - First sync: returns all packs (full download ~50-200 KB each)
+    - Delta sync: pass since_version=N to get only packs with version > N
+    - Each pack contains questions + answers + explanations as a JSON blob
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import QuestionPackModel
+
+            query = select(QuestionPackModel).where(QuestionPackModel.version > since_version)
+            if subject_id:
+                query = query.where(QuestionPackModel.subject_id == subject_id)
+            if exam_name:
+                query = query.where(QuestionPackModel.exam_name == exam_name)
+
+            result = await session_obj.execute(query.order_by(QuestionPackModel.version.desc()))
+            packs = result.scalars().all()
+
+            return {
+                "packs": [
+                    {
+                        "id": str(p.id),
+                        "name": p.name,
+                        "description": p.description,
+                        "subject_id": str(p.subject_id),
+                        "exam_name": p.exam_name,
+                        "version": p.version,
+                        "question_count": p.question_count,
+                        "pack_size_kb": p.pack_size_kb,
+                        "checksum": p.checksum,
+                        "pack_data": p.pack_data,
+                    }
+                    for p in packs
+                ],
+                "latest_version": max((p.version for p in packs), default=0),
+                "total_packs": len(packs),
+            }
+    except Exception:
+        return {"packs": [], "latest_version": 0, "total_packs": 0}
+
+
+@router.post(
+    "/sync/offline-results",
+    summary="Sync offline study results (Phase 4)",
+)
+async def sync_offline_results(
+    results: list[dict] = Field(description='[{"question_instance_id": "uuid", "answer": {...}, "time_spent": 12, "correct": true}, ...]'),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Sync study results from offline sessions."""
+    try:
+        synced = 0
+        failed = 0
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import AttemptModel, QuestionInstanceModel
+            from uuid import uuid4
+
+            for r in results:
+                try:
+                    instance = QuestionInstanceModel(
+                        id=uuid4(),
+                        template_version_id=UUID(r.get("template_version_id", str(uuid4()))),
+                        content_version_id=UUID(r.get("content_version_id", str(uuid4()))),
+                        learner_enrollment_id=UUID(r["enrollment_id"]),
+                        study_session_id=UUID(r["session_id"]),
+                        parameter_seed=r.get("seed", 0),
+                        parameter_values=r.get("parameters", {}),
+                        rendered_prompt=r.get("prompt", {"text": "Offline question"}),
+                        rendered_choices=r.get("choices"),
+                        correct_answer=r.get("correct_answer", {}),
+                        distractors_with_tags=r.get("distractors"),
+                        served_at=datetime.fromisoformat(r["served_at"]) if r.get("served_at") else datetime.now(timezone.utc),
+                        status="answered",
+                        answered_at=datetime.now(timezone.utc),
+                    )
+                    session_obj.add(instance)
+                    await session_obj.flush()
+
+                    attempt = AttemptModel(
+                        id=uuid4(),
+                        question_instance_id=instance.id,
+                        learner_enrollment_id=UUID(r["enrollment_id"]),
+                        study_session_id=UUID(r["session_id"]),
+                        content_version_id=instance.content_version_id,
+                        template_version_id=instance.template_version_id,
+                        algorithm_version_id=UUID(r.get("algorithm_version_id", str(uuid4()))),
+                        scoring_outcome="correct" if r.get("correct") else "incorrect",
+                        time_to_answer_ms=r.get("time_spent", 0) * 1000,
+                        hint_used=r.get("hint_used", False),
+                        hint_tiers_used=r.get("hint_tiers", []),
+                        attempt_intent="practice",
+                        marks_delta=1.0 if r.get("correct") else -r.get("negative_marking", 0.0),
+                        error_type=r.get("error_type"),
+                    )
+                    session_obj.add(attempt)
+                    synced += 1
+                except Exception:
+                    failed += 1
+
+            await _uow.commit()
+
+        return {
+            "synced": synced,
+            "failed": failed,
+            "message": f"Synced {synced} offline results." + (f" {failed} failed." if failed else ""),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# Phase 4 Indian Localization: WhatsApp Sharing
+# ============================================================
+
+
+@router.get(
+    "/share/question/{question_instance_id}",
+    summary="Get shareable question data for WhatsApp (Phase 4)",
+)
+async def get_shareable_question(
+    question_instance_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get a question formatted for WhatsApp sharing."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import QuestionInstanceModel
+            result = await session_obj.execute(
+                select(QuestionInstanceModel).where(QuestionInstanceModel.id == question_instance_id)
+            )
+            instance = result.scalar_one_or_none()
+            if not instance:
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            prompt = instance.rendered_prompt or {}
+            choices = instance.rendered_choices or []
+            prompt_text = prompt.get("text", str(prompt)) if isinstance(prompt, dict) else str(prompt)
+
+            wa_text = f"🐍 *MasteryOS Question of the Day*\n\n"
+            wa_text += f"❓ {prompt_text}\n\n"
+            for ch in choices:
+                wa_text += f"{ch.get('id', '?')}. {ch.get('text', '')}\n"
+            wa_text += f"\n🔗 Answer here: https://masteryos-production.up.railway.app/study/start"
+            wa_text += f"\n📱 Can you beat my score?"
+
+            import urllib.parse
+            wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_text)}"
+
+            return {
+                "whatsapp_text": wa_text,
+                "whatsapp_url": wa_url,
+                "question_id": str(question_instance_id),
+                "deep_link": f"https://masteryos-production.up.railway.app/study/start?q={question_instance_id}",
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/share/score",
+    summary="Get shareable score for WhatsApp (Phase 4)",
+)
+async def get_shareable_score(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get the user's latest performance formatted for WhatsApp score sharing."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import AttemptModel, LearnerEnrollmentModel
+
+            attempts_result = await session_obj.execute(
+                select(AttemptModel).where(
+                    AttemptModel.learner_enrollment_id.in_(
+                        select(LearnerEnrollmentModel.id).where(LearnerEnrollmentModel.user_id == user_id)
+                    )
+                ).order_by(AttemptModel.created_at.desc()).limit(20)
+            )
+            recent = attempts_result.scalars().all()
+
+            if not recent:
+                wa_text = "🐍 I just started learning on MasteryOS! Join me: https://masteryos-production.up.railway.app/register"
+            else:
+                correct = sum(1 for a in recent if a.scoring_outcome == "correct")
+                accuracy = round((correct / len(recent)) * 100)
+                marks = sum(getattr(a, 'marks_delta', 0.0) for a in recent)
+
+                wa_text = f"🔥 *My MasteryOS Stats*\n\n"
+                wa_text += f"✅ Accuracy: {accuracy}%\n"
+                wa_text += f"📝 Questions: {len(recent)}\n"
+                wa_text += f"⭐ Net marks: {marks:.1f}\n\n"
+                wa_text += f"Can you beat my score? 🎯\n"
+                wa_text += f"🔗 https://masteryos-production.up.railway.app/register"
+
+            import urllib.parse
+            wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_text)}"
+
+            return {
+                "whatsapp_text": wa_text,
+                "whatsapp_url": wa_url,
+            }
+    except Exception:
+        return {
+            "whatsapp_text": "Join me on MasteryOS! https://masteryos-production.up.railway.app/register",
+            "whatsapp_url": "https://wa.me/?text=Join%20me%20on%20MasteryOS!",
+        }
+
+
+@router.get(
+    "/share/daily-question",
+    summary="Get daily question for WhatsApp bot (Phase 4)",
+)
+async def get_daily_question(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get a daily question for WhatsApp distribution."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.content import QuestionTemplateModel, TemplateVersionModel
+            import sqlalchemy
+
+            result = await session_obj.execute(
+                select(TemplateVersionModel, QuestionTemplateModel)
+                .join(QuestionTemplateModel, TemplateVersionModel.template_id == QuestionTemplateModel.id)
+                .where(QuestionTemplateModel.status == "published")
+                .where(QuestionTemplateModel.current_version_id == TemplateVersionModel.id)
+                .order_by(sqlalchemy.func.random())
+                .limit(1)
+            )
+            row = result.first()
+            if not row:
+                raise HTTPException(status_code=404, detail="No published questions available")
+
+            tv, qt = row
+            prompt = tv.prompt_template or {}
+            prompt_text = prompt.get("text", str(prompt)) if isinstance(prompt, dict) else str(prompt)
+
+            solutions = {}
+            if tv.solution_traditional:
+                solutions["traditional"] = tv.solution_traditional.get("text", "")
+            if tv.solution_shortcut:
+                solutions["shortcut"] = tv.solution_shortcut.get("text", "")
+            if tv.solution_elimination:
+                solutions["elimination"] = tv.solution_elimination.get("text", "")
+
+            wa_text = f"🐍 *Daily Python Interview Question*\n\n❓ {prompt_text}\n\n"
+            wa_text += f"Think you know the answer?\n"
+            wa_text += f"🔗 Practice here: https://masteryos-production.up.railway.app/register"
+            import urllib.parse
+            wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_text)}"
+
+            return {
+                "question_text": prompt_text,
+                "whatsapp_text": wa_text,
+                "whatsapp_url": wa_url,
+                "template_id": str(qt.id),
+                "difficulty": tv.difficulty_estimate,
+                "solutions_available": list(solutions.keys()),
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# Phase 4 Indian Localization: Solution Styles
+# ============================================================
+
+
+@router.get(
+    "/questions/{question_instance_id}/solutions",
+    summary="Get all solution styles for a question (Phase 4)",
+)
+async def get_solution_styles(
+    question_instance_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get all available solution methods for a question.
+
+    Indian coaching institutes teach multiple methods:
+    - traditional: NCERT-style detailed step-by-step
+    - shortcut: Vedic Maths / trick-based (10-second solution)
+    - elimination: How to eliminate wrong options without solving
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import QuestionInstanceModel
+            from app.infrastructure.database.orm.content import TemplateVersionModel
+
+            instance_result = await session_obj.execute(
+                select(QuestionInstanceModel).where(QuestionInstanceModel.id == question_instance_id)
+            )
+            instance = instance_result.scalar_one_or_none()
+            if not instance:
+                raise HTTPException(status_code=404, detail="Question not found")
+
+            tv_result = await session_obj.execute(
+                select(TemplateVersionModel).where(TemplateVersionModel.id == instance.template_version_id)
+            )
+            tv = tv_result.scalar_one_or_none()
+            if not tv:
+                raise HTTPException(status_code=404, detail="Template version not found")
+
+            solutions: dict[str, str | None] = {}
+            if tv.solution_traditional:
+                solutions["traditional"] = tv.solution_traditional.get("text", str(tv.solution_traditional))
+            if tv.solution_shortcut:
+                solutions["shortcut"] = tv.solution_shortcut.get("text", str(tv.solution_shortcut))
+            if tv.solution_elimination:
+                solutions["elimination"] = tv.solution_elimination.get("text", str(tv.solution_elimination))
+
+            return {
+                "question_instance_id": str(question_instance_id),
+                "solutions": solutions,
+                "available_methods": list(solutions.keys()),
+                "has_multiple_methods": len(solutions) > 1,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# Phase 4 Indian Localization: Leaderboards + Peer Comparison
+# ============================================================
+
+
+@router.get(
+    "/leaderboard",
+    summary="Get leaderboard rankings (Phase 4)",
+)
+async def get_leaderboard(
+    period: str = Query("weekly", description="daily, weekly, monthly, all_time"),
+    subject_id: UUID | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get leaderboard rankings for peer comparison."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import LeaderboardModel
+            from app.infrastructure.database.orm.identity import UserModel
+
+            query = (
+                select(LeaderboardModel, UserModel.email)
+                .outerjoin(UserModel, LeaderboardModel.user_id == UserModel.id)
+                .where(LeaderboardModel.period == period)
+            )
+            if subject_id:
+                query = query.where(LeaderboardModel.subject_id == subject_id)
+
+            query = query.order_by(LeaderboardModel.rank.asc()).limit(limit)
+            result = await session_obj.execute(query)
+            rows = result.all()
+
+            user_rank = None
+            user_entry = None
+            for lb, email in rows:
+                if lb.user_id == user_id:
+                    user_rank = lb.rank
+                    user_entry = lb
+                    break
+
+            if user_rank is None:
+                user_result = await session_obj.execute(
+                    select(LeaderboardModel).where(
+                        LeaderboardModel.user_id == user_id,
+                        LeaderboardModel.period == period,
+                    )
+                )
+                user_lb = user_result.scalar_one_or_none()
+                if user_lb:
+                    user_rank = user_lb.rank
+                    user_entry = user_lb
+
+            total_users_result = await session_obj.execute(
+                select(func.count()).select_from(LeaderboardModel).where(
+                    LeaderboardModel.period == period
+                )
+            )
+            total_users = total_users_result.scalar() or 0
+
+            return {
+                "period": period,
+                "rankings": [
+                    {
+                        "rank": lb.rank,
+                        "email": email or "Anonymous" if lb.user_id != user_id else f"{email} (You)",
+                        "score": round(lb.score, 2),
+                        "accuracy": round(lb.accuracy * 100, 1),
+                        "total_correct": lb.total_correct,
+                        "total_attempted": lb.total_attempted,
+                        "avg_speed_seconds": round(lb.avg_speed_seconds, 1),
+                        "streak_days": lb.streak_days,
+                        "is_you": lb.user_id == user_id,
+                    }
+                    for lb, email in rows
+                ],
+                "your_rank": user_rank,
+                "your_score": round(user_entry.score, 2) if user_entry else 0.0,
+                "your_percentile": round((1 - (user_rank / max(total_users, 1))) * 100, 1) if user_rank else 0.0,
+                "total_users": total_users,
+            }
+    except Exception:
+        return {
+            "period": period,
+            "rankings": [],
+            "your_rank": None,
+            "your_score": 0.0,
+            "your_percentile": 0.0,
+            "total_users": 0,
+        }
+
+
+@router.get(
+    "/peer-comparison",
+    summary="Get peer comparison stats (Phase 4)",
+)
+async def get_peer_comparison(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get peer comparison statistics.
+
+    Shows how the user compares to other learners:
+    - 'You're in the top 15% for Algorithms'
+    - 'Your accuracy is 85% vs peer average of 72%'
+    - 'Your speed is 12s vs peer average of 18s'
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import LeaderboardModel, AttemptModel, LearnerEnrollmentModel
+
+            user_attempts = await session_obj.execute(
+                select(AttemptModel).where(
+                    AttemptModel.learner_enrollment_id.in_(
+                        select(LearnerEnrollmentModel.id).where(LearnerEnrollmentModel.user_id == user_id)
+                    )
+                ).order_by(AttemptModel.created_at.desc()).limit(50)
+            )
+            user_recent = user_attempts.scalars().all()
+
+            if not user_recent:
+                return {
+                    "your_accuracy": 0.0,
+                    "peer_avg_accuracy": 0.0,
+                    "your_speed": 0.0,
+                    "peer_avg_speed": 0.0,
+                    "your_percentile": 0.0,
+                    "messages": ["Answer some questions to see how you compare!"],
+                }
+
+            user_correct = sum(1 for a in user_recent if a.scoring_outcome == "correct")
+            user_accuracy = user_correct / len(user_recent)
+            user_speed = sum(a.time_to_answer_ms for a in user_recent) / len(user_recent) / 1000
+
+            peer_result = await session_obj.execute(
+                select(
+                    func.avg(LeaderboardModel.accuracy).label("avg_accuracy"),
+                    func.avg(LeaderboardModel.avg_speed_seconds).label("avg_speed"),
+                    func.count().label("total"),
+                ).where(LeaderboardModel.period == "all_time")
+            )
+            peer_row = peer_result.one()
+            peer_accuracy = float(peer_row.avg_accuracy or 0.0)
+            peer_speed = float(peer_row.avg_speed or 0.0)
+            total_users = int(peer_row.total or 0)
+
+            user_rank_result = await session_obj.execute(
+                select(LeaderboardModel.rank).where(
+                    LeaderboardModel.user_id == user_id,
+                    LeaderboardModel.period == "all_time",
+                )
+            )
+            user_rank = user_rank_result.scalar()
+            percentile = round((1 - (user_rank / max(total_users, 1))) * 100, 1) if user_rank else 0.0
+
+            messages = []
+            if user_accuracy > peer_accuracy:
+                messages.append(f"Your accuracy ({round(user_accuracy*100)}%) is above peer average ({round(peer_accuracy*100)}%) 🎯")
+            else:
+                messages.append(f"Your accuracy ({round(user_accuracy*100)}%) is below peer average ({round(peer_accuracy*100)}%) — keep practicing!")
+            if user_speed < peer_speed:
+                messages.append(f"Your speed ({round(user_speed)}s) is faster than peer average ({round(peer_speed)}s) ⚡")
+            else:
+                messages.append(f"Your speed ({round(user_speed)}s) is slower than peer average ({round(peer_speed)}s) — try accuracy drills!")
+            if percentile >= 75:
+                messages.append(f"You're in the top {100 - percentile:.0f}% of all learners! 🔥")
+            elif percentile >= 50:
+                messages.append(f"You're in the top {100 - percentile:.0f}% — keep climbing! 📈")
+            else:
+                messages.append(f"You're in the bottom {percentile:.0f}% — every expert was once a beginner! 💪")
+
+            return {
+                "your_accuracy": round(user_accuracy * 100, 1),
+                "peer_avg_accuracy": round(peer_accuracy * 100, 1),
+                "your_speed": round(user_speed, 1),
+                "peer_avg_speed": round(peer_speed, 1),
+                "your_percentile": percentile,
+                "total_peers": total_users,
+                "messages": messages,
+            }
+    except Exception:
+        return {
+            "your_accuracy": 0.0,
+            "peer_avg_accuracy": 0.0,
+            "your_speed": 0.0,
+            "peer_avg_speed": 0.0,
+            "your_percentile": 0.0,
+            "total_peers": 0,
+            "messages": ["Answer some questions to see how you compare!"],
+        }
+
+
 @router.post(
     "/enrollments/{enrollment_id}/learning-goals",
     response_model=LearningGoalResponse,

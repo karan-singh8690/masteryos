@@ -406,3 +406,64 @@ class UserCoinModel(TimestampMixin, Base):
     balance: Mapped[int] = mapped_column(Integer, nullable=False, default=100)  # Start with 100 coins
     total_earned: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     total_spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+# ============================================================
+# Phase 4 Indian Localization: Leaderboards + Peer Comparison
+# ============================================================
+
+
+class LeaderboardModel(TimestampMixin, Base):
+    """ORM model for analytics.leaderboards — daily/weekly/all-time rankings.
+
+    Updated periodically by a background worker that aggregates
+    user performance into ranked entries.
+    """
+
+    __tablename__ = "leaderboards"
+    __table_args__ = (
+        CheckConstraint("period IN ('daily', 'weekly', 'monthly', 'all_time')", name="chk_leaderboard_period"),
+        Index("idx_leaderboard_period_score", "period", "score"),
+        {"schema": "analytics"},
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    period: Mapped[str] = mapped_column(String(20), nullable=False)  # daily, weekly, monthly, all_time
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # performance_index * 100
+    total_correct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_attempted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    avg_speed_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    streak_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subject_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)  # null = all subjects
+
+
+# ============================================================
+# Phase 4 Indian Localization: Question Packs (Delta Sync)
+# ============================================================
+
+
+class QuestionPackModel(TimestampMixin, Base):
+    """ORM model for content.question_packs — pre-downloadable offline packs.
+
+    Each pack contains a set of questions for a subject + exam combination.
+    Users download packs for offline study, then sync results when online.
+    """
+
+    __tablename__ = "question_packs"
+    __table_args__ = (
+        UniqueConstraint("subject_id", "exam_name", "version", name="uq_qpack_version"),
+        {"schema": "content"},
+    )
+
+    subject_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    exam_name: Mapped[str | None] = mapped_column(String(50), nullable=True)  # null = general
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pack_size_kb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # approximate size
+    # The actual question data (JSON blob — can be large)
+    pack_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")  # for delta sync verification

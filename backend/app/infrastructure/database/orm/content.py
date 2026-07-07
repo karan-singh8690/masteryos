@@ -155,6 +155,10 @@ class TemplateVersionModel(Base):
     prompt_template_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     explanation_template_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     distractor_generator_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Phase 4 Indian localization: Solution styles (traditional + shortcut + elimination)
+    solution_traditional: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)  # NCERT-style detailed steps
+    solution_shortcut: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)  # Vedic Maths / trick-based
+    solution_elimination: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)  # How to eliminate wrong options
 
     template: Mapped[QuestionTemplateModel] = relationship(back_populates="versions")
     concepts: Mapped[list[TemplateConceptModel]] = relationship(back_populates="template_version", cascade="all, delete-orphan")
