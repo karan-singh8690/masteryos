@@ -22,6 +22,7 @@ import {
   Shield,
   ChevronDown,
   Command,
+  FileText,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -60,6 +61,7 @@ const LEARNER_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, description: 'Overview & stats' },
   { label: 'Subjects', href: '/subjects', icon: BookOpen, description: 'Browse curriculum' },
   { label: 'Study', href: '/study/start', icon: GraduationCap, description: 'Start a session' },
+  { label: 'Materials', href: '/materials', icon: FileText, description: 'PDFs & notes' },
   { label: 'Reviews', href: '/reviews', icon: Calendar, description: 'Spaced repetition' },
   { label: 'Recommendations', href: '/recommendations', icon: Lightbulb, description: 'AI suggestions' },
   { label: 'Achievements', href: '/achievements', icon: Trophy, description: 'Your milestones' },

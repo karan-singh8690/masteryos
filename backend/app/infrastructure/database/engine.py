@@ -38,6 +38,7 @@ from app.infrastructure.database.orm import (  # noqa: E402, F401
     core,
     content,
     billing,
+    materials,
 )
 
 logger = get_logger(__name__)

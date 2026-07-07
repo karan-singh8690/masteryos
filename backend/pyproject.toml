@@ -43,6 +43,9 @@ dependencies = [
     "orjson>=3.10.0",
     # SaaS
     "stripe>=8.0.0",
+    # PDF rendering (Phase A — study materials)
+    "PyMuPDF>=1.24.0",
+    "Pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]

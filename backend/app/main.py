@@ -182,6 +182,8 @@ def create_app() -> FastAPI:
     from app.presentation.api.v1.operations import router as operations_router
     # WebSocket real-time
     from app.presentation.api.v1.websocket import router as websocket_router
+    # Study Materials (PDF viewer, view-only)
+    from app.presentation.api.v1.materials import router as materials_router
     # Task 025-deploy: import beta_templates so its email templates register
     # into the TEMPLATES dict at app startup.
     from app.infrastructure.email import beta_templates  # noqa: F401
@@ -202,6 +204,7 @@ def create_app() -> FastAPI:
     app.include_router(content_seed_router, prefix="/api/v1")
     app.include_router(operations_router, prefix="/api/v1")
     app.include_router(websocket_router, prefix="/api/v1")
+    app.include_router(materials_router, prefix="/api/v1")
 
     # Global exception handler — ensures all errors (including 500s)
     # return a JSON response with proper CORS headers.
