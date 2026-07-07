@@ -27,6 +27,7 @@ interface NavItem { label: string; href: string; icon: LucideIcon }
 const ADMIN_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
   { label: 'Users', href: '/admin/users', icon: Users },
+  { label: 'Materials', href: '/admin/materials', icon: FileText },
   { label: 'Organizations', href: '/admin/organizations', icon: Building2 },
   { label: 'RBAC', href: '/admin/rbac', icon: Shield },
   { label: 'Feature Flags', href: '/admin/feature-flags', icon: Flag },
