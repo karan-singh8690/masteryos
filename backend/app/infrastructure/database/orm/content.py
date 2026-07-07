@@ -251,7 +251,7 @@ class ConceptDependencyModel(Base):
 
     concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
     prerequisite_concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
-    min_mastery: Mapped[float] = mapped_column(Float, nullable=False, default=0.3, description="Minimum mastery required on prerequisite before serving this concept")
+    min_mastery: Mapped[float] = mapped_column(Float, nullable=False, default=0.3)
 
 
 # ============================================================
@@ -273,7 +273,7 @@ class ExamWeightageModel(Base):
         {"schema": "content"},
     )
 
-    exam_name: Mapped[str] = mapped_column(String(50), nullable=False, description="e.g., 'JEE', 'GATE', 'NEET'")
+    exam_name: Mapped[str] = mapped_column(String(50), nullable=False)
     concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
-    weightage: Mapped[float] = mapped_column(Float, nullable=False, description="0.0-1.0, e.g., 0.25 for 25% of exam marks")
-    topic_cluster: Mapped[str | None] = mapped_column(String(100), nullable=True, description="e.g., 'Mechanics', 'Algorithms'")
+    weightage: Mapped[float] = mapped_column(Float, nullable=False)
+    topic_cluster: Mapped[str | None] = mapped_column(String(100), nullable=True)
