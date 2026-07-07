@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select, func, and_
 
 from app.application.learning.dto import (
     EnrollLearnerCommand,
