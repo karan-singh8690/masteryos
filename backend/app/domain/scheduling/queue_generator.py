@@ -59,6 +59,15 @@ class DeterministicQueueGenerator:
     NEW_CONCEPT_WEIGHT = 0.20
     GOAL_URGENCY_WEIGHT = 0.15
 
+    # Phase 2: Exam proximity multipliers (how much to compress review intervals)
+    EXAM_PROXIMITY_MULTIPLIERS = {
+        90: 1.0,   # >90 days: normal
+        60: 0.7,   # 60-90 days: compress 30%
+        30: 0.5,   # 30-60 days: compress 50%
+        15: 0.3,   # 15-30 days: aggressive
+        0: 0.1,    # <15 days: cram mode
+    }
+
     def generate(
         self,
         enrollment_id: Any,
@@ -68,6 +77,10 @@ class DeterministicQueueGenerator:
         due_reviews: list[Any],
         learning_goals: list[Any],
         queue_size: int = 15,
+        # Phase 2 Indian localization
+        concept_prerequisites: dict[Any, list[tuple[Any, float]]] | None = None,
+        exam_proximity_days: int | None = None,
+        exam_weightage: dict[Any, float] | None = None,
     ) -> list[QueueItem]:
         """Generate an adaptive queue.
 
@@ -79,10 +92,33 @@ class DeterministicQueueGenerator:
             due_reviews: List of Review domain entities that are due.
             learning_goals: List of active LearningGoal domain entities.
             queue_size: Maximum queue size.
+            concept_prerequisites: Phase 2 — {concept_id: [(prereq_id, min_mastery), ...]}
+            exam_proximity_days: Phase 2 — days until exam (affects review urgency)
+            exam_weightage: Phase 2 — {concept_id: weightage} for prioritizing high-weight topics
 
         Returns:
             An ordered list of QueueItem DTOs.
         """
+        # Phase 2: Build mastery lookup for prerequisite checking
+        mastery_lookup: dict[Any, float] = {}
+        for score in mastery_scores:
+            mastery_lookup[score.concept_id] = score.mastery_score_combined
+
+        # Phase 2: Build set of concepts whose prerequisites are met
+        unlocked_concepts: set[Any] = set()
+        if concept_prerequisites:
+            for concept_id, prereqs in concept_prerequisites.items():
+                all_met = True
+                for prereq_id, min_mastery in prereqs:
+                    actual = mastery_lookup.get(prereq_id, 0.0)
+                    if actual < min_mastery:
+                        all_met = False
+                        break
+                if all_met:
+                    unlocked_concepts.add(concept_id)
+        else:
+            # No prerequisites defined — all concepts unlocked
+            unlocked_concepts = set(mastery_lookup.keys())
         # Handle empty state (new learner with no mastery scores)
         if not mastery_scores and not due_reviews:
             return self._generate_diagnostic_queue(enrollment_id, session_id, queue_size)
@@ -90,9 +126,21 @@ class DeterministicQueueGenerator:
         # Build candidate list with priority scores
         candidates: list[tuple[float, str, UUID, str]] = []
 
+        # Phase 2: Exam proximity multiplier — boost all priorities as exam approaches
+        exam_boost = 1.0
+        if exam_proximity_days is not None:
+            for threshold, multiplier in sorted(self.EXAM_PROXIMITY_MULTIPLIERS.items(), reverse=True):
+                if exam_proximity_days >= threshold:
+                    exam_boost = 1.0 + (1.0 - multiplier)  # Convert compression to boost
+                    break
+
         # 1. Add due reviews (highest priority for review intent)
         for review in due_reviews:
             priority = self._compute_review_priority(review, intent)
+            # Phase 2: Boost high-weightage concepts
+            if exam_weightage and review.concept_id.value in exam_weightage:
+                priority *= (1.0 + exam_weightage[review.concept_id.value])
+            priority *= exam_boost
             reason = "review_due"
             candidates.append((
                 priority,
@@ -104,7 +152,14 @@ class DeterministicQueueGenerator:
         # 2. Add weak concepts (high priority for drill intent)
         for score in mastery_scores:
             if score.is_weak:
+                # Phase 2: Skip if prerequisites not met
+                if concept_prerequisites and score.concept_id not in unlocked_concepts:
+                    continue
                 priority = self._compute_weakness_priority(score, intent)
+                # Phase 2: Boost high-weightage weak concepts (red alert!)
+                if exam_weightage and score.concept_id.value in exam_weightage:
+                    priority *= (1.0 + exam_weightage[score.concept_id.value] * 2)  # Double boost for weak + high-weight
+                priority *= exam_boost
                 reason = "weak_concept"
                 candidates.append((
                     priority,
@@ -116,7 +171,13 @@ class DeterministicQueueGenerator:
         # 3. Add concepts in development (medium priority)
         for score in mastery_scores:
             if not score.is_weak and not score.is_proficient_or_above:
+                # Phase 2: Skip if prerequisites not met
+                if concept_prerequisites and score.concept_id not in unlocked_concepts:
+                    continue
                 priority = self._compute_development_priority(score, intent)
+                if exam_weightage and score.concept_id.value in exam_weightage:
+                    priority *= (1.0 + exam_weightage[score.concept_id.value])
+                priority *= exam_boost
                 reason = "in_progress"
                 candidates.append((
                     priority,

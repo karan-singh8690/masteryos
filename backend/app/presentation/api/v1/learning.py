@@ -227,6 +227,159 @@ async def set_exam_settings(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ============================================================
+# Phase 2 Indian Localization: Concept Dependencies + Exam Weightage
+# ============================================================
+
+
+class ConceptDependencyRequest(BaseModel):
+    """Request: add a prerequisite to a concept."""
+    prerequisite_concept_id: UUID
+    min_mastery: float = Field(default=0.3, ge=0.0, le=1.0)
+
+
+@router.post(
+    "/concepts/{concept_id}/prerequisites",
+    summary="Add a prerequisite to a concept (Phase 2)",
+)
+async def add_concept_prerequisite(
+    concept_id: UUID,
+    request: ConceptDependencyRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Add a prerequisite relationship between concepts."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.content import ConceptDependencyModel
+            dep = ConceptDependencyModel(
+                concept_id=concept_id,
+                prerequisite_concept_id=request.prerequisite_concept_id,
+                min_mastery=request.min_mastery,
+            )
+            session_obj.add(dep)
+            await _uow.commit()
+        return {"message": "Prerequisite added", "min_mastery": request.min_mastery}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/concepts/{concept_id}/prerequisites",
+    summary="List prerequisites for a concept (Phase 2)",
+)
+async def list_concept_prerequisites(
+    concept_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """List all prerequisites for a concept."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.content import ConceptDependencyModel, ConceptModel
+            result = await session_obj.execute(
+                select(ConceptDependencyModel, ConceptModel).join(
+                    ConceptModel,
+                    ConceptDependencyModel.prerequisite_concept_id == ConceptModel.id
+                ).where(ConceptDependencyModel.concept_id == concept_id)
+            )
+            return [
+                {
+                    "prerequisite_concept_id": str(dep.prerequisite_concept_id),
+                    "prerequisite_name": concept.name,
+                    "min_mastery": dep.min_mastery,
+                }
+                for dep, concept in result.all()
+            ]
+    except Exception:
+        return []
+
+
+class ExamWeightageRequest(BaseModel):
+    """Request: set exam weightage for a concept."""
+    exam_name: str
+    weightage: float = Field(ge=0.0, le=1.0, description="0.0-1.0, e.g., 0.25 for 25%")
+    topic_cluster: str | None = None
+
+
+@router.post(
+    "/concepts/{concept_id}/exam-weightage",
+    summary="Set exam weightage for a concept (Phase 2)",
+)
+async def set_exam_weightage(
+    concept_id: UUID,
+    request: ExamWeightageRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Set the weightage of a concept for a specific exam."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.content import ExamWeightageModel
+            from sqlalchemy import update as sql_update
+            existing = await session_obj.execute(
+                select(ExamWeightageModel).where(
+                    ExamWeightageModel.exam_name == request.exam_name,
+                    ExamWeightageModel.concept_id == concept_id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                await session_obj.execute(
+                    sql_update(ExamWeightageModel).where(
+                        ExamWeightageModel.exam_name == request.exam_name,
+                        ExamWeightageModel.concept_id == concept_id,
+                    ).values(weightage=request.weightage, topic_cluster=request.topic_cluster)
+                )
+            else:
+                w = ExamWeightageModel(
+                    exam_name=request.exam_name,
+                    concept_id=concept_id,
+                    weightage=request.weightage,
+                    topic_cluster=request.topic_cluster,
+                )
+                session_obj.add(w)
+            await _uow.commit()
+        return {"message": "Exam weightage set", "exam_name": request.exam_name, "weightage": request.weightage}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/exam-weightage/{exam_name}",
+    summary="Get exam weightage for all concepts (Phase 2)",
+)
+async def get_exam_weightage(
+    exam_name: str,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """Get the weightage of all concepts for a specific exam."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.content import ExamWeightageModel, ConceptModel
+            result = await session_obj.execute(
+                select(ExamWeightageModel, ConceptModel).join(
+                    ConceptModel,
+                    ExamWeightageModel.concept_id == ConceptModel.id
+                ).where(ExamWeightageModel.exam_name == exam_name)
+            )
+            return [
+                {
+                    "concept_id": str(w.concept_id),
+                    "concept_name": concept.name,
+                    "weightage": w.weightage,
+                    "topic_cluster": w.topic_cluster,
+                }
+                for w, concept in result.all()
+            ]
+    except Exception:
+        return []
+
+
 @router.post(
     "/enrollments/{enrollment_id}/learning-goals",
     response_model=LearningGoalResponse,

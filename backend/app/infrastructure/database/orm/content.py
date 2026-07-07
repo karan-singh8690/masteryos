@@ -219,3 +219,53 @@ class ContentPackModel(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     artifact_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ============================================================
+# Phase 2 Indian Localization: Concept Dependency Graph
+# ============================================================
+
+
+class ConceptDependencyModel(Base):
+    """ORM model for content.concept_dependencies — prerequisite chain (DAG).
+
+    If concept A requires concept B, the learner must achieve minimum mastery
+    on B before the queue generator serves A's questions.
+    """
+
+    __tablename__ = "concept_dependencies"
+    __table_args__ = (
+        UniqueConstraint("concept_id", "prerequisite_concept_id", name="uq_concept_deps"),
+        CheckConstraint("concept_id <> prerequisite_concept_id", name="chk_no_self_dependency"),
+        CheckConstraint("min_mastery >= 0.0 AND min_mastery <= 1.0", name="chk_dep_min_mastery"),
+        {"schema": "content"},
+    )
+
+    concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
+    prerequisite_concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
+    min_mastery: Mapped[float] = mapped_column(Float, nullable=False, default=0.3, description="Minimum mastery required on prerequisite before serving this concept")
+
+
+# ============================================================
+# Phase 2 Indian Localization: Exam Weightage Clusters
+# ============================================================
+
+
+class ExamWeightageModel(Base):
+    """ORM model for content.exam_weightage — maps concepts to exam weightage.
+
+    Example: In JEE Physics, Mechanics has 25% weightage.
+    The weighted readiness dashboard uses this to prioritize high-weightage topics.
+    """
+
+    __tablename__ = "exam_weightage"
+    __table_args__ = (
+        UniqueConstraint("exam_name", "concept_id", name="uq_exam_concept_weightage"),
+        CheckConstraint("weightage >= 0.0 AND weightage <= 1.0", name="chk_weightage_range"),
+        {"schema": "content"},
+    )
+
+    exam_name: Mapped[str] = mapped_column(String(50), nullable=False, description="e.g., 'JEE', 'GATE', 'NEET'")
+    concept_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.concepts.id", ondelete="CASCADE"), nullable=False)
+    weightage: Mapped[float] = mapped_column(Float, nullable=False, description="0.0-1.0, e.g., 0.25 for 25% of exam marks")
+    topic_cluster: Mapped[str | None] = mapped_column(String(100), nullable=True, description="e.g., 'Mechanics', 'Algorithms'")

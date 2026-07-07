@@ -199,6 +199,10 @@ class DashboardResponse(BaseModel):
     performance_index: float = 0.0  # aggregate accuracy + speed + risk
     total_marks: float = 0.0  # net marks (correct - negative)
     error_breakdown: dict[str, int] = {}  # {concept_gap: 5, misread: 2, time_pressure: 1}
+    # Phase 2 Indian localization
+    weighted_readiness: float = 0.0  # mastery weighted by exam weightage
+    high_weightage_weak: list[dict[str, Any]] = []  # RED ALERT: weak concepts with high weightage
+    exam_proximity_mode: str | None = None  # normal, revision, mock, cram
 
 
 # ============================================================
@@ -324,6 +328,64 @@ async def get_dashboard(
                         if et:
                             error_breakdown[et] = error_breakdown.get(et, 0) + 1
 
+                # Phase 2: Weighted readiness + high-weightage weak concepts
+                weighted_readiness = 0.0
+                high_weightage_weak = []
+                exam_proximity_mode = None
+
+                if target_exam_name:
+                    # Load exam weightage
+                    from app.infrastructure.database.orm.content import ExamWeightageModel, ConceptModel
+                    weightage_result = await session.execute(
+                        select(ExamWeightageModel, ConceptModel).join(
+                            ConceptModel,
+                            ExamWeightageModel.concept_id == ConceptModel.id
+                        ).where(ExamWeightageModel.exam_name == target_exam_name)
+                    )
+                    weightage_map = {}  # concept_id -> (weightage, name, cluster)
+                    for w, c in weightage_result.all():
+                        weightage_map[str(c.id)] = (w.weightage, c.name, w.topic_cluster)
+
+                    if weightage_map and all_scores:
+                        # Weighted readiness = sum(mastery * weightage) / sum(weightage)
+                        total_weight = sum(w[0] for w in weightage_map.values())
+                        if total_weight > 0:
+                            weighted_sum = 0.0
+                            for score in all_scores:
+                                cid = str(score.concept_id.value)
+                                if cid in weightage_map:
+                                    w_val = weightage_map[cid][0]
+                                    weighted_sum += score.mastery_score_combined * w_val
+                            weighted_readiness = round(weighted_sum / total_weight, 4)
+
+                        # Find weak concepts with high weightage (RED ALERT)
+                        for score in all_scores:
+                            if score.is_weak:
+                                cid = str(score.concept_id.value)
+                                if cid in weightage_map:
+                                    w_val, name, cluster = weightage_map[cid]
+                                    if w_val >= 0.1:  # >10% weightage = high priority
+                                        high_weightage_weak.append({
+                                            "concept_id": cid,
+                                            "concept_name": name,
+                                            "mastery": round(score.mastery_score_combined, 4),
+                                            "weightage": w_val,
+                                            "topic_cluster": cluster,
+                                        })
+
+                    # Phase 2: Exam proximity mode
+                    if exam_countdown is not None:
+                        if exam_countdown > 90:
+                            exam_proximity_mode = "normal"
+                        elif exam_countdown > 60:
+                            exam_proximity_mode = "revision"
+                        elif exam_countdown > 30:
+                            exam_proximity_mode = "intensive"
+                        elif exam_countdown > 15:
+                            exam_proximity_mode = "mock"
+                        else:
+                            exam_proximity_mode = "cram"
+
             # Check for active session
             active_session = await _uow.study_sessions.get_active_by_enrollment(enrollment_id)
 
@@ -403,6 +465,10 @@ async def get_dashboard(
             performance_index=perf_index,
             total_marks=total_marks,
             error_breakdown=error_breakdown,
+            # Phase 2 Indian localization
+            weighted_readiness=weighted_readiness,
+            high_weightage_weak=high_weightage_weak,
+            exam_proximity_mode=exam_proximity_mode,
         )
     except Exception as exc:
         # If anything goes wrong, return an empty dashboard instead of 500
