@@ -293,3 +293,116 @@ class OutboxEventModel(TimestampMixin, Base):
     leased_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+
+# ============================================================
+# Phase 3 Indian Localization: Mock Test Mode
+# ============================================================
+
+
+class MockTestModel(TimestampMixin, Base):
+    """ORM model for assessment.mock_tests — exam-realistic timed sessions.
+
+    Mock tests simulate actual exam conditions:
+    - Fixed time limit (e.g., 180 min for JEE)
+    - Sectional time limits (e.g., 60 min per section for CAT)
+    - Negative marking
+    - Question count matches real exam
+    """
+
+    __tablename__ = "mock_tests"
+    __table_args__ = (
+        CheckConstraint("status IN ('not_started', 'in_progress', 'completed', 'abandoned')", name="chk_mock_status"),
+        {"schema": "assessment"},
+    )
+
+    learner_enrollment_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    study_session_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    exam_name: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "JEE Main Mock 1"
+    total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_limit_minutes: Mapped[int] = mapped_column(Integer, nullable=False)  # e.g., 180
+    negative_marking_factor: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_started")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Results (filled when completed)
+    total_attempted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_correct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_wrong: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_unattempted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    marks_scored: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    max_marks: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Sectional results (JSON: [{"section": "Physics", "attempted": 25, "correct": 20, ...}])
+    sectional_results: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+
+# ============================================================
+# Phase 3 Indian Localization: Community Doubt Solving
+# ============================================================
+
+
+class DoubtModel(TimestampMixin, Base):
+    """ORM model for community.doubts — student-posted questions.
+
+    Students post doubts (screenshots, text) about questions they got wrong.
+    Community members answer, earn coins, and top answers become permanent content.
+    """
+
+    __tablename__ = "doubts"
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'answered', 'verified', 'closed')", name="chk_doubt_status"),
+        Index("idx_doubts_concept", "concept_id"),
+        Index("idx_doubts_status", "status"),
+        {"schema": "community"},
+    )
+
+    posted_by_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    question_instance_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    concept_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    screenshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")  # en, hi, ta, etc.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    upvotes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class DoubtAnswerModel(TimestampMixin, Base):
+    """ORM model for community.doubt_answers — answers to student doubts."""
+
+    __tablename__ = "doubt_answers"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'verified', 'rejected')", name="chk_danswer_status"),
+        Index("idx_doubt_answers_doubt", "doubt_id"),
+        {"schema": "community"},
+    )
+
+    doubt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    answered_by_user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    upvotes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_by: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+
+
+class UserCoinModel(TimestampMixin, Base):
+    """ORM model for community.user_coins — gamified coin system.
+
+    Coins are earned by answering doubts, achieving streaks, etc.
+    Coins are spent by posting doubts or unlocking premium content.
+    """
+
+    __tablename__ = "user_coins"
+    __table_args__ = (
+        Index("idx_user_coins_user", "user_id", unique=True),
+        {"schema": "community"},
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
+    balance: Mapped[int] = mapped_column(Integer, nullable=False, default=100)  # Start with 100 coins
+    total_earned: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    total_spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

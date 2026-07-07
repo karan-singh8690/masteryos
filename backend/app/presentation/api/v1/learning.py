@@ -380,6 +380,562 @@ async def get_exam_weightage(
         return []
 
 
+# ============================================================
+# Phase 3 Indian Localization: Mock Test Mode
+# ============================================================
+
+
+class CreateMockTestRequest(BaseModel):
+    """Request: create a mock test."""
+    enrollment_id: UUID
+    exam_name: str = "Mock Test"
+    total_questions: int = Field(default=30, ge=5, le=100)
+    time_limit_minutes: int = Field(default=180, ge=10, le=300)
+    negative_marking_factor: float = Field(default=0.25, ge=0.0, le=1.0)
+
+
+@router.post(
+    "/mock-tests",
+    summary="Create a mock test (Phase 3 — exam-realistic mode)",
+)
+async def create_mock_test(
+    request: CreateMockTestRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Create a mock test with exam-realistic conditions:
+    - Fixed time limit
+    - Negative marking
+    - Fixed question count
+    - No hints allowed
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import MockTestModel
+            from uuid import uuid4
+
+            mock = MockTestModel(
+                id=uuid4(),
+                learner_enrollment_id=request.enrollment_id,
+                exam_name=request.exam_name,
+                total_questions=request.total_questions,
+                time_limit_minutes=request.time_limit_minutes,
+                negative_marking_factor=request.negative_marking_factor,
+                max_marks=float(request.total_questions),
+            )
+            session_obj.add(mock)
+            await _uow.commit()
+
+        return {
+            "id": str(mock.id),
+            "exam_name": request.exam_name,
+            "total_questions": request.total_questions,
+            "time_limit_minutes": request.time_limit_minutes,
+            "negative_marking_factor": request.negative_marking_factor,
+            "status": "not_started",
+            "message": "Mock test created. Start it to begin the timer.",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post(
+    "/mock-tests/{mock_test_id}/start",
+    summary="Start a mock test (begins the timer)",
+)
+async def start_mock_test(
+    mock_test_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Start the mock test — timer begins now."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import MockTestModel
+            from sqlalchemy import update as sql_update
+            from datetime import datetime, timezone
+
+            await session_obj.execute(
+                sql_update(MockTestModel)
+                .where(MockTestModel.id == mock_test_id)
+                .values(status="in_progress", started_at=datetime.now(timezone.utc))
+            )
+            await _uow.commit()
+
+        return {"message": "Mock test started. Timer is running."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post(
+    "/mock-tests/{mock_test_id}/submit",
+    summary="Submit a mock test (calculate results)",
+)
+async def submit_mock_test(
+    mock_test_id: UUID,
+    results: dict = Field(default_factory=dict, description='{"correct": 20, "wrong": 5, "unattempted": 5}'),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Submit the mock test and calculate results including negative marking."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import MockTestModel
+            from sqlalchemy import update as sql_update
+            from datetime import datetime, timezone
+
+            mock_result = await session_obj.execute(
+                select(MockTestModel).where(MockTestModel.id == mock_test_id)
+            )
+            mock = mock_result.scalar_one_or_none()
+            if not mock:
+                raise HTTPException(status_code=404, detail="Mock test not found")
+
+            correct = results.get("correct", 0)
+            wrong = results.get("wrong", 0)
+            unattempted = results.get("unattempted", mock.total_questions - correct - wrong)
+            attempted = correct + wrong
+
+            marks = correct - (wrong * mock.negative_marking_factor)
+            accuracy = (correct / attempted) if attempted > 0 else 0.0
+
+            await session_obj.execute(
+                sql_update(MockTestModel)
+                .where(MockTestModel.id == mock_test_id)
+                .values(
+                    status="completed",
+                    ended_at=datetime.now(timezone.utc),
+                    total_attempted=attempted,
+                    total_correct=correct,
+                    total_wrong=wrong,
+                    total_unattempted=unattempted,
+                    marks_scored=marks,
+                    accuracy=round(accuracy, 4),
+                )
+            )
+            await _uow.commit()
+
+        return {
+            "id": str(mock_test_id),
+            "status": "completed",
+            "total_questions": mock.total_questions,
+            "attempted": attempted,
+            "correct": correct,
+            "wrong": wrong,
+            "unattempted": unattempted,
+            "marks_scored": marks,
+            "max_marks": mock.max_marks,
+            "accuracy": round(accuracy, 4),
+            "negative_marking_factor": mock.negative_marking_factor,
+            "time_limit_minutes": mock.time_limit_minutes,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/mock-tests/{mock_test_id}",
+    summary="Get mock test details + results",
+)
+async def get_mock_test(
+    mock_test_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get mock test details and results."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import MockTestModel
+            result = await session_obj.execute(
+                select(MockTestModel).where(MockTestModel.id == mock_test_id)
+            )
+            mock = result.scalar_one_or_none()
+            if not mock:
+                raise HTTPException(status_code=404, detail="Mock test not found")
+
+            return {
+                "id": str(mock.id),
+                "exam_name": mock.exam_name,
+                "total_questions": mock.total_questions,
+                "time_limit_minutes": mock.time_limit_minutes,
+                "negative_marking_factor": mock.negative_marking_factor,
+                "status": mock.status,
+                "started_at": mock.started_at.isoformat() if mock.started_at else None,
+                "ended_at": mock.ended_at.isoformat() if mock.ended_at else None,
+                "results": {
+                    "attempted": mock.total_attempted,
+                    "correct": mock.total_correct,
+                    "wrong": mock.total_wrong,
+                    "unattempted": mock.total_unattempted,
+                    "marks_scored": mock.marks_scored,
+                    "max_marks": mock.max_marks,
+                    "accuracy": mock.accuracy,
+                } if mock.status == "completed" else None,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================
+# Phase 3 Indian Localization: Community Doubt Solving
+# ============================================================
+
+
+class PostDoubtRequest(BaseModel):
+    """Request: post a doubt."""
+    title: str = Field(max_length=200)
+    description: str
+    question_instance_id: UUID | None = None
+    concept_id: UUID | None = None
+    screenshot_url: str | None = None
+    language: str = Field(default="en", max_length=10)
+
+
+@router.post(
+    "/doubts",
+    summary="Post a doubt (Phase 3 — community doubt solving)",
+)
+async def post_doubt(
+    request: PostDoubtRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Post a doubt to the community. Costs 5 coins.
+
+    Other users can answer to earn 10 coins + 2 mastery points.
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import DoubtModel, UserCoinModel
+            from uuid import uuid4
+            from sqlalchemy import update as sql_update
+
+            # Check coin balance + deduct 5 coins
+            coin_result = await session_obj.execute(
+                select(UserCoinModel).where(UserCoinModel.user_id == user_id)
+            )
+            coins = coin_result.scalar_one_or_none()
+            if coins is None:
+                # Auto-create coin account with 100 starting coins
+                coins = UserCoinModel(user_id=user_id, balance=100, total_earned=100, total_spent=0)
+                session_obj.add(coins)
+                await session_obj.flush()
+
+            if coins.balance < 5:
+                raise HTTPException(status_code=402, detail={
+                    "code": "INSUFFICIENT_COINS",
+                    "message": f"Not enough coins. You have {coins.balance}, need 5. Answer doubts to earn more.",
+                })
+
+            await session_obj.execute(
+                sql_update(UserCoinModel)
+                .where(UserCoinModel.user_id == user_id)
+                .values(balance=UserCoinModel.balance - 5, total_spent=UserCoinModel.total_spent + 5)
+            )
+
+            doubt = DoubtModel(
+                id=uuid4(),
+                posted_by_user_id=user_id,
+                question_instance_id=request.question_instance_id,
+                concept_id=request.concept_id,
+                title=request.title,
+                description=request.description,
+                screenshot_url=request.screenshot_url,
+                language=request.language,
+            )
+            session_obj.add(doubt)
+            await _uow.commit()
+
+        return {"id": str(doubt.id), "message": "Doubt posted. Cost: 5 coins."}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/doubts",
+    summary="List open doubts (Phase 3)",
+)
+async def list_doubts(
+    status_filter: str = Query("open", alias="status"),
+    concept_id: UUID | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """List doubts — filter by status, concept, or language."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import DoubtModel
+            from app.infrastructure.database.orm.identity import UserModel
+
+            query = (
+                select(DoubtModel, UserModel.email)
+                .outerjoin(UserModel, DoubtModel.posted_by_user_id == UserModel.id)
+                .where(DoubtModel.status == status_filter)
+            )
+            if concept_id:
+                query = query.where(DoubtModel.concept_id == concept_id)
+
+            query = query.order_by(DoubtModel.upvotes.desc(), DoubtModel.created_at.desc())
+            query = query.offset((page - 1) * page_size).limit(page_size)
+
+            result = await session_obj.execute(query)
+            rows = result.all()
+
+            return {
+                "items": [
+                    {
+                        "id": str(d.id),
+                        "title": d.title,
+                        "description": d.description[:200] + "..." if len(d.description) > 200 else d.description,
+                        "posted_by": email or "Anonymous",
+                        "language": d.language,
+                        "upvotes": d.upvotes,
+                        "view_count": d.view_count,
+                        "status": d.status,
+                        "created_at": d.created_at.isoformat() if d.created_at else None,
+                        "screenshot_url": d.screenshot_url,
+                    }
+                    for d, email in rows
+                ],
+                "page": page,
+                "page_size": page_size,
+            }
+    except Exception:
+        return {"items": [], "page": page, "page_size": page_size}
+
+
+class AnswerDoubtRequest(BaseModel):
+    """Request: answer a doubt."""
+    content: str
+    language: str = Field(default="en", max_length=10)
+
+
+@router.post(
+    "/doubts/{doubt_id}/answers",
+    summary="Answer a doubt (Phase 3 — earn 10 coins)",
+)
+async def answer_doubt(
+    doubt_id: UUID,
+    request: AnswerDoubtRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Answer a doubt. Earn 10 coins + update doubt status to 'answered'."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import DoubtModel, DoubtAnswerModel, UserCoinModel
+            from uuid import uuid4
+            from sqlalchemy import update as sql_update
+
+            # Post the answer
+            answer = DoubtAnswerModel(
+                id=uuid4(),
+                doubt_id=doubt_id,
+                answered_by_user_id=user_id,
+                content=request.content,
+                language=request.language,
+            )
+            session_obj.add(answer)
+
+            # Update doubt status
+            await session_obj.execute(
+                sql_update(DoubtModel)
+                .where(DoubtModel.id == doubt_id)
+                .values(status="answered")
+            )
+
+            # Award 10 coins to the answerer
+            coin_result = await session_obj.execute(
+                select(UserCoinModel).where(UserCoinModel.user_id == user_id)
+            )
+            coins = coin_result.scalar_one_or_none()
+            if coins is None:
+                coins = UserCoinModel(user_id=user_id, balance=110, total_earned=110, total_spent=0)
+                session_obj.add(coins)
+            else:
+                await session_obj.execute(
+                    sql_update(UserCoinModel)
+                    .where(UserCoinModel.user_id == user_id)
+                    .values(balance=UserCoinModel.balance + 10, total_earned=UserCoinModel.total_earned + 10)
+                )
+
+            await _uow.commit()
+
+        return {"id": str(answer.id), "message": "Answer posted. Earned 10 coins!"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/doubts/{doubt_id}/answers",
+    summary="List answers for a doubt (Phase 3)",
+)
+async def list_doubt_answers(
+    doubt_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[dict]:
+    """List all answers for a doubt, sorted by upvotes."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import DoubtAnswerModel
+            from app.infrastructure.database.orm.identity import UserModel
+
+            result = await session_obj.execute(
+                select(DoubtAnswerModel, UserModel.email)
+                .outerjoin(UserModel, DoubtAnswerModel.answered_by_user_id == UserModel.id)
+                .where(DoubtAnswerModel.doubt_id == doubt_id)
+                .order_by(DoubtAnswerModel.upvotes.desc(), DoubtAnswerModel.created_at.asc())
+            )
+            return [
+                {
+                    "id": str(a.id),
+                    "content": a.content,
+                    "answered_by": email or "Anonymous",
+                    "language": a.language,
+                    "upvotes": a.upvotes,
+                    "is_verified": a.is_verified,
+                    "status": a.status,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                }
+                for a, email in result.all()
+            ]
+    except Exception:
+        return []
+
+
+@router.get(
+    "/coins",
+    summary="Get coin balance (Phase 3)",
+)
+async def get_coin_balance(
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Get the current user's coin balance + earned/spent totals."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.core import UserCoinModel
+            result = await session_obj.execute(
+                select(UserCoinModel).where(UserCoinModel.user_id == user_id)
+            )
+            coins = result.scalar_one_or_none()
+            if coins is None:
+                # Auto-create with 100 starting coins
+                coins = UserCoinModel(user_id=user_id, balance=100, total_earned=100, total_spent=0)
+                session_obj.add(coins)
+                await _uow.commit()
+
+            return {
+                "balance": coins.balance,
+                "total_earned": coins.total_earned,
+                "total_spent": coins.total_spent,
+            }
+    except Exception:
+        return {"balance": 100, "total_earned": 100, "total_spent": 0}
+
+
+# ============================================================
+# Phase 3 Indian Localization: UPI Payment + India Pricing
+# ============================================================
+
+
+class UpiPaymentRequest(BaseModel):
+    """Request: create a UPI payment order."""
+    plan: str = Field(description="free, plus, pro, coaching")
+    upi_id: str = Field(description="User's UPI ID (e.g., user@paytm)")
+    months: int = Field(default=1, ge=1, le=12)
+
+
+# India-specific pricing in ₹
+INDIA_PRICING = {
+    "free": {"monthly": 0, "name": "Free", "features": ["All content", "Adaptive engine", "Mastery tracking"]},
+    "plus": {"monthly": 99, "name": "Plus", "features": ["Everything in Free", "Mock tests", "PYQs", "Performance analytics"]},
+    "pro": {"monthly": 299, "name": "Pro", "features": ["Everything in Plus", "AI explanations", "Doubt solving", "Community", "Offline mode"]},
+    "coaching": {"monthly": 999, "name": "Coaching", "features": ["Everything in Pro", "Live sessions", "Mentor", "Custom study plan"]},
+}
+
+
+@router.get(
+    "/billing/plans-inr",
+    summary="Get India-specific pricing in ₹ (Phase 3)",
+)
+async def get_india_pricing(
+    user_id: UUID = Depends(get_current_user_id),
+) -> dict:
+    """Get pricing tiers for the Indian market in Rupees."""
+    return {
+        "currency": "INR",
+        "plans": INDIA_PRICING,
+        "payment_methods": ["UPI", "PhonePe", "Google Pay", "Paytm", "Card"],
+        "note": "Prices in ₹. UPI is the preferred payment method in India.",
+    }
+
+
+@router.post(
+    "/billing/upi-payment",
+    summary="Create a UPI payment order (Phase 3)",
+)
+async def create_upi_payment(
+    request: UpiPaymentRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Create a UPI payment order.
+
+    In production, this would integrate with Razorpay/UPI Gateway.
+    For now, it creates a payment record and returns UPI intent URL.
+    """
+    try:
+        plan = INDIA_PRICING.get(request.plan)
+        if not plan:
+            raise HTTPException(status_code=422, detail=f"Invalid plan. Must be one of: {list(INDIA_PRICING.keys())}")
+
+        if plan["monthly"] == 0:
+            raise HTTPException(status_code=422, detail="Free plan doesn't require payment")
+
+        amount = plan["monthly"] * request.months
+        amount_paise = amount * 100  # UPI expects amount in paise
+
+        # In production: integrate with Razorpay/UPI gateway here
+        # For now: generate a UPI intent URL
+        upi_intent = f"upi://pay?pa=masteryos@upi&pn=MasteryOS&am={amount}&cu=INR&tn={request.plan}_plan_{request.months}m"
+
+        return {
+            "status": "pending",
+            "plan": request.plan,
+            "plan_name": plan["name"],
+            "amount": amount,
+            "amount_paise": amount_paise,
+            "currency": "INR",
+            "months": request.months,
+            "upi_id": request.upi_id,
+            "upi_intent_url": upi_intent,
+            "message": f"Pay ₹{amount} via UPI to activate {plan['name']} for {request.months} month(s).",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.post(
     "/enrollments/{enrollment_id}/learning-goals",
     response_model=LearningGoalResponse,

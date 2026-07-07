@@ -151,6 +151,10 @@ class TemplateVersionModel(Base):
     difficulty_estimate: Mapped[str] = mapped_column(String(10), nullable=False, default="medium")
     discrimination_estimate: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    # Phase 3 Indian localization: Hindi language support
+    prompt_template_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    explanation_template_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    distractor_generator_hindi: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     template: Mapped[QuestionTemplateModel] = relationship(back_populates="versions")
     concepts: Mapped[list[TemplateConceptModel]] = relationship(back_populates="template_version", cascade="all, delete-orphan")
