@@ -96,3 +96,26 @@ class MaterialConceptLinkModel(Base):
     is_prerequisite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     min_pages_read: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     reading_order: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class MaterialUnlockModel(Base):
+    """ORM model for content.material_unlocks — tracks premium material access.
+
+    A user unlocks a premium material by:
+    1. Paying coins (deducted from UserCoinModel)
+    2. Having an active Pro/Coaching subscription (auto-unlocked)
+
+    Once unlocked, the user can view all pages of the material.
+    """
+
+    __tablename__ = "material_unlocks"
+    __table_args__ = (
+        Index("idx_mat_unlocks_user", "user_id", "material_id", unique=True),
+        {"schema": "content"},
+    )
+
+    user_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    material_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("content.study_materials.id", ondelete="CASCADE"), nullable=False)
+    unlock_method: Mapped[str] = mapped_column(String(20), nullable=False)  # "coins", "subscription", "admin", "free"
+    coins_spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)

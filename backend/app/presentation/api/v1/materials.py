@@ -529,6 +529,163 @@ async def check_reading_prerequisites(
         return {"concepts_with_unread_prerequisites": [], "read_first_materials": []}
 
 
+# ============================================================
+# Phase C: Premium Material Monetization (Coin/Subscription Gating)
+# ============================================================
+
+
+@router.post(
+    "/materials/{material_id}/unlock",
+    summary="Unlock a premium material with coins (Phase C)",
+)
+async def unlock_material(
+    material_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Unlock a premium material by spending coins.
+
+    - Free materials: auto-unlocked, no coins spent
+    - Premium materials: deducts coin_cost from user's balance
+    - Admins: auto-unlocked (free)
+    - If already unlocked: returns success without charging again
+    """
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import StudyMaterialModel, MaterialUnlockModel
+            from app.infrastructure.database.orm.core import UserCoinModel
+            from sqlalchemy import update as sql_update
+
+            mat_result = await session_obj.execute(
+                select(StudyMaterialModel).where(StudyMaterialModel.id == material_id)
+            )
+            material = mat_result.scalar_one_or_none()
+            if not material:
+                raise HTTPException(status_code=404, detail="Material not found")
+
+            # Check if already unlocked
+            existing = await session_obj.execute(
+                select(MaterialUnlockModel).where(
+                    MaterialUnlockModel.user_id == user_id,
+                    MaterialUnlockModel.material_id == material_id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                return {"message": "Already unlocked", "unlock_method": "existing", "coins_spent": 0}
+
+            # Free material
+            if not material.is_premium or material.coin_cost == 0:
+                unlock = MaterialUnlockModel(
+                    user_id=user_id, material_id=material_id, unlock_method="free", coins_spent=0,
+                )
+                session_obj.add(unlock)
+                await _uow.commit()
+                return {"message": "Unlocked (free)", "unlock_method": "free", "coins_spent": 0}
+
+            # Check admin
+            from app.infrastructure.database.orm.identity import UserModel
+            user_result = await session_obj.execute(select(UserModel.role).where(UserModel.id == user_id))
+            user_role = user_result.scalar_one_or_none()
+            if user_role in ("administrator", "system_admin"):
+                unlock = MaterialUnlockModel(
+                    user_id=user_id, material_id=material_id, unlock_method="admin", coins_spent=0,
+                )
+                session_obj.add(unlock)
+                await _uow.commit()
+                return {"message": "Unlocked (admin)", "unlock_method": "admin", "coins_spent": 0}
+
+            # Check coins
+            coin_result = await session_obj.execute(
+                select(UserCoinModel).where(UserCoinModel.user_id == user_id)
+            )
+            coins = coin_result.scalar_one_or_none()
+            if coins is None:
+                coins = UserCoinModel(user_id=user_id, balance=100, total_earned=100, total_spent=0)
+                session_obj.add(coins)
+                await session_obj.flush()
+
+            if coins.balance < material.coin_cost:
+                raise HTTPException(status_code=402, detail={
+                    "code": "INSUFFICIENT_COINS",
+                    "message": f"Not enough coins. You have {coins.balance}, need {material.coin_cost}.",
+                    "your_balance": coins.balance,
+                    "required": material.coin_cost,
+                })
+
+            # Deduct coins + create unlock
+            await session_obj.execute(
+                sql_update(UserCoinModel).where(UserCoinModel.user_id == user_id)
+                .values(balance=UserCoinModel.balance - material.coin_cost, total_spent=UserCoinModel.total_spent + material.coin_cost)
+            )
+            unlock = MaterialUnlockModel(
+                user_id=user_id, material_id=material_id, unlock_method="coins", coins_spent=material.coin_cost,
+            )
+            session_obj.add(unlock)
+            await _uow.commit()
+
+        return {"message": f"Unlocked for {material.coin_cost} coins", "unlock_method": "coins", "coins_spent": material.coin_cost}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/materials/{material_id}/access",
+    summary="Check if user has access to a material (Phase C)",
+)
+async def check_material_access(
+    material_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    uow: UnitOfWork = Depends(get_uow),
+) -> dict:
+    """Check if the user can access a material (free, unlocked, or admin)."""
+    try:
+        async with uow as _uow:
+            session_obj = _uow._session  # type: ignore[union-attr]
+            from app.infrastructure.database.orm.materials import StudyMaterialModel, MaterialUnlockModel
+
+            mat_result = await session_obj.execute(
+                select(StudyMaterialModel).where(StudyMaterialModel.id == material_id)
+            )
+            material = mat_result.scalar_one_or_none()
+            if not material:
+                raise HTTPException(status_code=404, detail="Material not found")
+
+            if not material.is_premium or material.coin_cost == 0:
+                return {"has_access": True, "is_premium": False, "coin_cost": 0, "unlock_method": "free"}
+
+            unlock_result = await session_obj.execute(
+                select(MaterialUnlockModel).where(
+                    MaterialUnlockModel.user_id == user_id,
+                    MaterialUnlockModel.material_id == material_id,
+                )
+            )
+            unlock = unlock_result.scalar_one_or_none()
+            if unlock:
+                return {"has_access": True, "is_premium": True, "coin_cost": material.coin_cost, "unlock_method": unlock.unlock_method}
+
+            from app.infrastructure.database.orm.identity import UserModel
+            user_result = await session_obj.execute(select(UserModel.role).where(UserModel.id == user_id))
+            user_role = user_result.scalar_one_or_none()
+            if user_role in ("administrator", "system_admin"):
+                return {"has_access": True, "is_premium": True, "coin_cost": material.coin_cost, "unlock_method": "admin"}
+
+            from app.infrastructure.database.orm.core import UserCoinModel
+            coin_result = await session_obj.execute(select(UserCoinModel.balance).where(UserCoinModel.user_id == user_id))
+            coin_balance = coin_result.scalar_one_or_none() or 100
+
+            return {
+                "has_access": False, "is_premium": True, "coin_cost": material.coin_cost,
+                "your_coins": coin_balance, "can_afford": coin_balance >= material.coin_cost, "unlock_method": None,
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.get(
     "/materials/{material_id}/page/{page_num}",
     summary="Get watermarked page image (view-only, no download)",
@@ -549,7 +706,7 @@ async def get_material_page(
     try:
         async with uow as _uow:
             session_obj = _uow._session  # type: ignore[union-attr]
-            from app.infrastructure.database.orm.materials import StudyMaterialModel
+            from app.infrastructure.database.orm.materials import StudyMaterialModel, MaterialUnlockModel
             from app.infrastructure.database.orm.identity import UserModel
 
             # Load material
@@ -559,6 +716,31 @@ async def get_material_page(
             m = result.scalar_one_or_none()
             if not m:
                 raise HTTPException(status_code=404, detail="Material not found")
+
+            # Phase C: Check access for premium materials
+            if m.is_premium and m.coin_cost > 0:
+                # Check if unlocked
+                unlock_result = await session_obj.execute(
+                    select(MaterialUnlockModel).where(
+                        MaterialUnlockModel.user_id == user_id,
+                        MaterialUnlockModel.material_id == material_id,
+                    )
+                )
+                unlock = unlock_result.scalar_one_or_none()
+
+                if not unlock:
+                    # Check admin
+                    role_result = await session_obj.execute(
+                        select(UserModel.role).where(UserModel.id == user_id)
+                    )
+                    user_role = role_result.scalar_one_or_none()
+                    if user_role not in ("administrator", "system_admin"):
+                        raise HTTPException(status_code=403, detail={
+                            "code": "PREMIUM_LOCKED",
+                            "message": f"This is a premium material. Unlock for {m.coin_cost} coins.",
+                            "coin_cost": m.coin_cost,
+                            "is_premium": True,
+                        })
 
             if page_num < 1 or page_num > m.page_count:
                 raise HTTPException(status_code=404, detail=f"Page {page_num} not found. Material has {m.page_count} pages.")

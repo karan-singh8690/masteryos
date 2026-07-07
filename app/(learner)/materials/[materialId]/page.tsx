@@ -2,10 +2,11 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, FileText, Loader2, AlertCircle, Eye } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileText, Loader2, AlertCircle, Eye, Lock, Coins, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 import { tokenStorage } from '@/lib/api-client'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -16,6 +17,7 @@ export default function MaterialViewerPage() {
   const materialId = params.materialId as string
 
   const [material, setMaterial] = React.useState<any>(null)
+  const [access, setAccess] = React.useState<any>(null)
   const [currentPage, setCurrentPage] = React.useState(1)
   const [pageImageUrl, setPageImageUrl] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -77,14 +79,25 @@ export default function MaterialViewerPage() {
       if (res.ok) {
         const data = await res.json()
         setMaterial(data)
-        // Load saved progress
-        const progRes = await fetch(`${API_URL}/api/v1/materials/${materialId}/progress`, {
+
+        // Phase C: Check access
+        const accessRes = await fetch(`${API_URL}/api/v1/materials/${materialId}/access`, {
           headers: { Authorization: `Bearer ${token}` },
         })
-        if (progRes.ok) {
-          const prog = await progRes.json()
-          if (prog.current_page > 0) {
-            setCurrentPage(prog.current_page)
+        if (accessRes.ok) {
+          const accessData = await accessRes.json()
+          setAccess(accessData)
+          if (accessData.has_access) {
+            // Load saved progress
+            const progRes = await fetch(`${API_URL}/api/v1/materials/${materialId}/progress`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            if (progRes.ok) {
+              const prog = await progRes.json()
+              if (prog.current_page > 0) {
+                setCurrentPage(prog.current_page)
+              }
+            }
           }
         }
       } else {
@@ -134,6 +147,29 @@ export default function MaterialViewerPage() {
     saveProgress(currentPage, readTime)
     readTimeRef.current = Date.now()
     setCurrentPage(page)
+  }
+
+  async function handleUnlock() {
+    try {
+      const token = tokenStorage.getAccessToken()
+      const res = await fetch(`${API_URL}/api/v1/materials/${materialId}/unlock`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        toast.success(data.message)
+        // Refresh access
+        setAccess({ has_access: true, is_premium: true, coin_cost: material?.coin_cost || 0, unlock_method: data.unlock_method })
+        // Fetch first page
+        if (material) fetchPage(1)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.detail?.message || 'Failed to unlock')
+      }
+    } catch {
+      toast.error('Network error')
+    }
   }
 
   if (loading) {
@@ -210,7 +246,40 @@ export default function MaterialViewerPage() {
         Each page is watermarked with your email. Screenshots are traceable.
       </div>
 
-      {/* PDF page viewer */}
+      {/* Phase C: Premium lock overlay */}
+      {access && !access.has_access && (
+        <Card className="glass-card rounded-2xl border-amber-500/30">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-inset ring-amber-500/20">
+              <Lock className="h-8 w-8 text-amber-400" />
+            </div>
+            <h3 className="mt-4 text-xl font-bold text-white">Premium Material</h3>
+            <p className="mt-2 max-w-sm text-sm text-zinc-400">
+              This material requires {access.coin_cost} coins to unlock. You currently have {access.your_coins} coins.
+            </p>
+            {access.can_afford ? (
+              <Button
+                className="btn-glow mt-6 gradient-emerald font-semibold text-black shadow-lg shadow-emerald-500/30"
+                onClick={handleUnlock}
+              >
+                <Coins className="mr-2 h-4 w-4" />
+                Unlock for {access.coin_cost} coins
+              </Button>
+            ) : (
+              <div className="mt-6 space-y-2">
+                <p className="text-sm text-red-400">You need {access.coin_cost - access.your_coins} more coins.</p>
+                <Button variant="outline" className="border-white/15 bg-white/5 text-white" onClick={() => router.push('/study/start')}>
+                  Study to earn coins
+                </Button>
+              </div>
+            )}
+            <p className="mt-4 text-xs text-zinc-600">Once unlocked, you can read all {material?.page_count} pages. View-only — no download.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PDF page viewer — only shown if user has access */}
+      {access?.has_access && (
       <Card className="glass-card overflow-hidden rounded-2xl">
         <CardContent className="p-0">
           {pageLoading ? (
@@ -235,8 +304,10 @@ export default function MaterialViewerPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
-      {/* Page navigation */}
+      {/* Page navigation — only shown if user has access */}
+      {access?.has_access && (
       <div className="flex items-center justify-between gap-4">
         <Button
           variant="outline"
@@ -276,6 +347,7 @@ export default function MaterialViewerPage() {
           Next <ChevronRight className="ml-1 h-4 w-4" />
         </Button>
       </div>
+      )}
     </div>
   )
 }
