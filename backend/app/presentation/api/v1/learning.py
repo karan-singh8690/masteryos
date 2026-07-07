@@ -473,9 +473,16 @@ async def start_mock_test(
     "/mock-tests/{mock_test_id}/submit",
     summary="Submit a mock test (calculate results)",
 )
+class MockTestResultsRequest(BaseModel):
+    """Request: submit mock test results."""
+    correct: int = 0
+    wrong: int = 0
+    unattempted: int = 0
+
+
 async def submit_mock_test(
     mock_test_id: UUID,
-    results: dict = Field(default_factory=dict, description='{"correct": 20, "wrong": 5, "unattempted": 5}'),
+    request: MockTestResultsRequest,
     user_id: UUID = Depends(get_current_user_id),
     uow: UnitOfWork = Depends(get_uow),
 ) -> dict:
@@ -494,9 +501,9 @@ async def submit_mock_test(
             if not mock:
                 raise HTTPException(status_code=404, detail="Mock test not found")
 
-            correct = results.get("correct", 0)
-            wrong = results.get("wrong", 0)
-            unattempted = results.get("unattempted", mock.total_questions - correct - wrong)
+            correct = request.correct
+            wrong = request.wrong
+            unattempted = request.unattempted or (mock.total_questions - correct - wrong)
             attempted = correct + wrong
 
             marks = correct - (wrong * mock.negative_marking_factor)
@@ -999,8 +1006,13 @@ async def get_question_packs(
     "/sync/offline-results",
     summary="Sync offline study results (Phase 4)",
 )
+class OfflineResultsRequest(BaseModel):
+    """Request: sync offline study results."""
+    results: list[dict[str, Any]] = []
+
+
 async def sync_offline_results(
-    results: list[dict] = Field(description='[{"question_instance_id": "uuid", "answer": {...}, "time_spent": 12, "correct": true}, ...]'),
+    request: OfflineResultsRequest,
     user_id: UUID = Depends(get_current_user_id),
     uow: UnitOfWork = Depends(get_uow),
 ) -> dict:
@@ -1013,7 +1025,7 @@ async def sync_offline_results(
             from app.infrastructure.database.orm.core import AttemptModel, QuestionInstanceModel
             from uuid import uuid4
 
-            for r in results:
+            for r in request.results:
                 try:
                     instance = QuestionInstanceModel(
                         id=uuid4(),
