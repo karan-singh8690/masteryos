@@ -131,9 +131,12 @@ async def create_tables() -> bool:
                 has_status_column = result.scalar()
 
                 if has_status_column:
-                    print("[startup] Database already initialized — running column migrations only")
+                    print("[startup] Database already initialized — running migrations")
+                    # Run create_all to create any NEW tables (Phase 3+4)
+                    # create_all is safe — it only creates tables that don't exist yet
+                    print("[startup] Creating any new tables...")
+                    await conn.run_sync(Base.metadata.create_all)
                     # Run ALTER TABLE migrations for new columns (Phase 1-4)
-                    print("[startup] Adding new columns for Indian localization phases...")
                     alter_statements = [
                         "ALTER TABLE learning.learner_enrollments ADD COLUMN IF NOT EXISTS target_exam_date TIMESTAMPTZ",
                         "ALTER TABLE learning.learner_enrollments ADD COLUMN IF NOT EXISTS target_exam_name VARCHAR(100)",
