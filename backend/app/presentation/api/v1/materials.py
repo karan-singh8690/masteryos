@@ -778,20 +778,29 @@ async def get_material_page(
 
             watermark_text = f"{user_email} | {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} | MasteryOS"
 
-            # Diagonal watermark across center
+            # Single watermark at bottom-left
             text_bbox = draw.textbbox((0, 0), watermark_text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
 
-            # Draw multiple watermarks
-            for y_offset in range(0, pix.height, 200):
-                for x_offset in range(0, pix.width, text_width + 100):
-                    draw.text(
-                        (x_offset, y_offset),
-                        watermark_text,
-                        fill=(128, 128, 128, 45),  # Semi-transparent gray
-                        font=font,
-                    )
+            # Position at bottom-left with 20px padding
+            margin = 20
+            x = margin
+            y = pix.height - text_height - margin
+
+            # Draw semi-transparent background bar for readability
+            draw.rectangle(
+                [x - 8, y - 4, x + text_width + 8, y + text_height + 4],
+                fill=(0, 0, 0, 80),  # Semi-transparent black background
+            )
+
+            # Draw watermark text
+            draw.text(
+                (x, y),
+                watermark_text,
+                fill=(255, 255, 255, 100),  # Semi-transparent white
+                font=font,
+            )
 
             # Convert to PNG bytes
             img_byte_arr = _io.BytesIO()
