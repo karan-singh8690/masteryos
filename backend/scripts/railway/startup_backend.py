@@ -131,7 +131,31 @@ async def create_tables() -> bool:
                 has_status_column = result.scalar()
 
                 if has_status_column:
-                    print("[startup] Database already initialized — skipping table creation")
+                    print("[startup] Database already initialized — running column migrations only")
+                    # Run ALTER TABLE migrations for new columns (Phase 1-4)
+                    print("[startup] Adding new columns for Indian localization phases...")
+                    alter_statements = [
+                        "ALTER TABLE learning.learner_enrollments ADD COLUMN IF NOT EXISTS target_exam_date TIMESTAMPTZ",
+                        "ALTER TABLE learning.learner_enrollments ADD COLUMN IF NOT EXISTS target_exam_name VARCHAR(100)",
+                        "ALTER TABLE learning.learner_enrollments ADD COLUMN IF NOT EXISTS negative_marking_factor FLOAT DEFAULT 0.0",
+                        "ALTER TABLE assessment.attempts ADD COLUMN IF NOT EXISTS error_type VARCHAR(30)",
+                        "ALTER TABLE assessment.attempts ADD COLUMN IF NOT EXISTS marks_delta FLOAT DEFAULT 0.0",
+                        "ALTER TABLE content.question_templates ADD COLUMN IF NOT EXISTS pyq_exam VARCHAR(50)",
+                        "ALTER TABLE content.question_templates ADD COLUMN IF NOT EXISTS pyq_year INTEGER",
+                        "ALTER TABLE content.question_templates ADD COLUMN IF NOT EXISTS pyq_source VARCHAR(200)",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS prompt_template_hindi JSONB",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS explanation_template_hindi JSONB",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS distractor_generator_hindi JSONB",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS solution_traditional JSONB",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS solution_shortcut JSONB",
+                        "ALTER TABLE content.template_versions ADD COLUMN IF NOT EXISTS solution_elimination JSONB",
+                    ]
+                    for stmt in alter_statements:
+                        try:
+                            await conn.execute(text(stmt))
+                        except Exception:
+                            pass
+                    print("[startup] Column migration complete")
                     await engine.dispose()
                     return True
                 else:
